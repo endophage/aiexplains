@@ -88,6 +88,37 @@ func splitTitleFromSections(content string) (title, sections string) {
 	return
 }
 
+// GenerateSections generates sections for an existing explanation without producing a title.
+// userPrompt optionally guides the content; if empty the topic alone drives generation.
+func (c *Client) GenerateSections(ctx context.Context, topic, userPrompt string) (string, error) {
+	guidance := ""
+	if strings.TrimSpace(userPrompt) != "" {
+		guidance = fmt.Sprintf("\nAdditional guidance from the user: %s", userPrompt)
+	}
+	prompt := fmt.Sprintf(`Generate a comprehensive HTML explanation of the following topic: %s%s
+
+Requirements:
+1. Structure the explanation as 3-6 HTML sections covering different aspects of the topic.
+2. Each section MUST follow this exact format:
+
+<div class="section" id="section-{slug}" data-current-version="1">
+<div class="section-version" data-version="1">
+<h2>Section Title</h2>
+<p>Content...</p>
+</div>
+</div>
+
+3. Use descriptive kebab-case section IDs (e.g., section-overview, section-key-concepts, section-examples).
+4. Use appropriate HTML elements: h2 for section titles, p for paragraphs, ul/ol for lists, code/pre for code samples.
+5. Do NOT include <!DOCTYPE>, <html>, <head>, or <body> tags.
+6. Return ONLY the HTML sections. No markdown, no code fences, no text outside of HTML.`, topic, guidance)
+
+	if c.localExec {
+		return c.execClaude(ctx, prompt)
+	}
+	return c.sdkGenerate(ctx, prompt)
+}
+
 // GenerateNewSection asks Claude to produce one or more new HTML sections to follow an existing one.
 func (c *Client) GenerateNewSection(ctx context.Context, topic, afterSectionContent, userPrompt string, existingIDs []string) (string, error) {
 	prompt := fmt.Sprintf(`You are adding new content to an HTML explanation about "%s".

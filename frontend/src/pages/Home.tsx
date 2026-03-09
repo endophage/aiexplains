@@ -32,6 +32,12 @@ export default function Home() {
     }
   }
 
+  function handleDelete(e: React.MouseEvent, id: string) {
+    e.stopPropagation()
+    api.deleteExplanation(id).catch(console.error)
+    setExplanations(prev => prev.filter(ex => ex.id !== id))
+  }
+
   function formatDate(iso: string) {
     return new Date(iso).toLocaleDateString(undefined, {
       year: 'numeric', month: 'short', day: 'numeric',
@@ -82,8 +88,17 @@ export default function Home() {
                 className="explanation-card"
                 onClick={() => navigate(`/explanations/${e.id}`)}
               >
-                <h3>{e.title}</h3>
-                <div className="meta">Updated {formatDate(e.updated_at)}</div>
+                <div className="card-body">
+                  <h3>{e.title}</h3>
+                  <div className="meta">Updated {formatDate(e.updated_at)}</div>
+                </div>
+                <button
+                  className="card-delete-btn"
+                  title="Delete explanation"
+                  onClick={ev => handleDelete(ev, e.id)}
+                >
+                  🗑
+                </button>
               </div>
             ))}
           </div>

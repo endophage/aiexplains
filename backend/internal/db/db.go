@@ -133,6 +133,15 @@ func (db *DB) TouchExplanation(id string) error {
 	return err
 }
 
+func (db *DB) DeleteExplanation(id string) error {
+	_, err := db.Exec(`DELETE FROM section_threads WHERE explanation_id = ?`, id)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(`DELETE FROM explanations WHERE id = ?`, id)
+	return err
+}
+
 func (db *DB) UpdateExplanationTitle(id, title string) error {
 	_, err := db.Exec(`UPDATE explanations SET title = ?, updated_at = ? WHERE id = ?`, title, time.Now().UTC(), id)
 	return err

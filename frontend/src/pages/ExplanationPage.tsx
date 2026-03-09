@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Explanation, Section } from '../types'
@@ -12,6 +12,9 @@ export default function ExplanationPage() {
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
   const titleInputRef = useRef<HTMLInputElement>(null)
+  const [regenPrompt, setRegenPrompt] = useState('')
+  const [regenerating, setRegenerating] = useState(false)
+  const [regenError, setRegenError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
@@ -105,6 +108,26 @@ export default function ExplanationPage() {
     })
   }
 
+  async function handleRegenerate(e: FormEvent) {
+    e.preventDefault()
+    if (!explanation || regenerating) return
+    setRegenerating(true)
+    setRegenError(null)
+    try {
+      const { sections: newSections } = await api.regenerateExplanation(explanation.id, regenPrompt.trim())
+      setExplanation(prev => {
+        if (!prev) return prev
+        const deleted = (prev.sections ?? []).filter(s => s.deleted)
+        return { ...prev, sections: [...newSections, ...deleted] }
+      })
+      setRegenPrompt('')
+    } catch (err) {
+      setRegenError(err instanceof Error ? err.message : 'Failed to generate sections')
+    } finally {
+      setRegenerating(false)
+    }
+  }
+
   if (loading) return (
     <>
       <header><div className="container"><h1>AI Explains</h1></div></header>
@@ -149,6 +172,26 @@ export default function ExplanationPage() {
       </header>
 
       <main className="container">
+        {activeSections.length === 0 && (
+          <div className="regen-form">
+            <p className="regen-hint">All sections have been deleted. Generate new content for this explanation.</p>
+            {regenError && <div className="error">{regenError}</div>}
+            <form onSubmit={handleRegenerate} className="regen-input-row">
+              <textarea
+                rows={2}
+                placeholder="Optionally describe what you'd like covered, or leave blank to regenerate from the topic…"
+                value={regenPrompt}
+                onChange={e => setRegenPrompt(e.target.value)}
+                disabled={regenerating}
+                className="regen-textarea"
+              />
+              <button type="submit" className="btn btn-primary" disabled={regenerating}>
+                {regenerating ? 'Generating…' : 'Generate'}
+              </button>
+            </form>
+          </div>
+        )}
+
         {activeSections.map((section, idx) => (
           <SectionComponent
             key={section.id}

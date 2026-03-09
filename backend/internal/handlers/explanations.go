@@ -401,6 +401,88 @@ func (h *Handler) ExtendSection(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) RegenerateExplanation(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	var body struct {
+		Prompt string `json:"prompt"`
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+
+	explanation, err := h.db.GetExplanation(id)
+	if err != nil || explanation == nil {
+		writeError(w, http.StatusNotFound, "explanation not found")
+		return
+	}
+
+	rawHTML, err := h.ai.GenerateSections(r.Context(), explanation.Topic, body.Prompt)
+	if err != nil {
+		log.Printf("ERROR GenerateSections explanation=%s: %v", id, err)
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("generating sections: %v", err))
+		return
+	}
+
+	newSections, err := htmlutil.ParseSections(rawHTML)
+	if err != nil || len(newSections) == 0 {
+		log.Printf("ERROR ParseSections regenerate (explanation=%s): err=%v raw=%q", id, err, rawHTML[:min(200, len(rawHTML))])
+		writeError(w, http.StatusInternalServerError, "failed to parse generated sections")
+		return
+	}
+
+	// Read existing file to preserve any deleted sections, then append new active sections
+	var existingSections []htmlutil.SectionData
+	if data, ferr := os.ReadFile(explanation.FilePath); ferr == nil {
+		existingSections, _ = htmlutil.ParseSections(string(data))
+	}
+
+	// Collect existing IDs for deduplication
+	taken := make(map[string]bool, len(existingSections))
+	for _, s := range existingSections {
+		taken[s.ID] = true
+	}
+	newSections = deduplicateIDs(newSections, taken)
+
+	// Keep deleted sections at the end; prepend new active sections
+	var deleted []htmlutil.SectionData
+	for _, s := range existingSections {
+		if s.Deleted {
+			deleted = append(deleted, s)
+		}
+	}
+	sections := append(newSections, deleted...)
+
+	doc := htmlutil.RenderExplanation(explanation.ID, explanation.Title, sections)
+	if err := os.WriteFile(explanation.FilePath, []byte(doc), 0644); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to write updated explanation")
+		return
+	}
+	h.db.TouchExplanation(id)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"sections": sectionsToResponse(newSections),
+	})
+}
+
+func (h *Handler) DeleteExplanation(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	explanation, err := h.db.GetExplanation(id)
+	if err != nil || explanation == nil {
+		writeError(w, http.StatusNotFound, "explanation not found")
+		return
+	}
+
+	if err := h.db.DeleteExplanation(id); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete explanation")
+		return
+	}
+
+	// Best-effort file removal; ignore error if file is already gone
+	os.Remove(explanation.FilePath)
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) PatchExplanation(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 

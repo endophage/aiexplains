@@ -40,6 +40,15 @@ export const api = {
       body: JSON.stringify({ prompt }),
     }),
 
+  deleteExplanation: (explanationId: string) =>
+    request<void>(`/explanations/${explanationId}`, { method: 'DELETE' }),
+
+  regenerateExplanation: (explanationId: string, prompt: string) =>
+    request<{ sections: Section[] }>(`/explanations/${explanationId}/regenerate`, {
+      method: 'POST',
+      body: JSON.stringify({ prompt }),
+    }),
+
   updateTitle: (explanationId: string, title: string) =>
     request<Explanation>(`/explanations/${explanationId}`, {
       method: 'PATCH',
