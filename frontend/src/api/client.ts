@@ -29,15 +29,21 @@ export const api = {
     request<Explanation>(`/explanations/${id}`),
 
   explainSection: (explanationId: string, sectionId: string, prompt: string) =>
-    request<{ section: Section }>(`/explanations/${explanationId}/sections/${sectionId}/explain`, {
+    request<{ section: Section; new_sections?: Section[] }>(`/explanations/${explanationId}/sections/${sectionId}/explain`, {
       method: 'POST',
       body: JSON.stringify({ prompt }),
     }),
 
   extendSection: (explanationId: string, sectionId: string, prompt: string) =>
-    request<{ section: Section }>(`/explanations/${explanationId}/sections/${sectionId}/extend`, {
+    request<{ sections: Section[] }>(`/explanations/${explanationId}/sections/${sectionId}/extend`, {
       method: 'POST',
       body: JSON.stringify({ prompt }),
+    }),
+
+  updateTitle: (explanationId: string, title: string) =>
+    request<Explanation>(`/explanations/${explanationId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ title }),
     }),
 
   deleteSection: (explanationId: string, sectionId: string) =>

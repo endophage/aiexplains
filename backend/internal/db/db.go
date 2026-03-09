@@ -133,6 +133,11 @@ func (db *DB) TouchExplanation(id string) error {
 	return err
 }
 
+func (db *DB) UpdateExplanationTitle(id, title string) error {
+	_, err := db.Exec(`UPDATE explanations SET title = ?, updated_at = ? WHERE id = ?`, title, time.Now().UTC(), id)
+	return err
+}
+
 func (db *DB) GetOrCreateSectionThread(explanationID, sectionID string) (*SectionThread, error) {
 	var thread SectionThread
 	var messagesJSON string

@@ -9,7 +9,7 @@ interface Props {
   isFirst: boolean
   isLast: boolean
   onUpdate: (section: Section) => void
-  onInsertAfter: (afterSectionId: string, newSection: Section) => void
+  onInsertAfter: (afterSectionId: string, newSections: Section[]) => void
   onMoveUp: () => void
   onMoveDown: () => void
   onDelete: () => void
@@ -55,9 +55,12 @@ export default function SectionComponent({
     setAsking(true)
     setAskError(null)
     try {
-      const { section: updated } = await api.explainSection(explanationId, section.id, askPrompt.trim())
+      const { section: updated, new_sections } = await api.explainSection(explanationId, section.id, askPrompt.trim())
       onUpdate(updated)
       setDisplayVersion(updated.current_version)
+      if (new_sections && new_sections.length > 0) {
+        onInsertAfter(section.id, new_sections)
+      }
       setAskPrompt('')
       setShowAsk(false)
     } catch (err) {
@@ -73,8 +76,8 @@ export default function SectionComponent({
     setExtending(true)
     setExtendError(null)
     try {
-      const { section: newSection } = await api.extendSection(explanationId, section.id, extendPrompt.trim())
-      onInsertAfter(section.id, newSection)
+      const { sections: newSections } = await api.extendSection(explanationId, section.id, extendPrompt.trim())
+      onInsertAfter(section.id, newSections)
       setExtendPrompt('')
       setShowExtend(false)
     } catch (err) {

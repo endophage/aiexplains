@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Explanation, Section } from '../types'
@@ -9,6 +9,9 @@ export default function ExplanationPage() {
   const [explanation, setExplanation] = useState<Explanation | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [titleDraft, setTitleDraft] = useState('')
+  const titleInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!id) return
@@ -28,14 +31,14 @@ export default function ExplanationPage() {
     })
   }
 
-  function handleInsertAfter(afterSectionId: string, newSection: Section) {
+  function handleInsertAfter(afterSectionId: string, newSections: Section[]) {
     setExplanation(prev => {
       if (!prev?.sections) return prev
       const idx = prev.sections.findIndex(s => s.id === afterSectionId)
       if (idx === -1) return prev
       const sections = [
         ...prev.sections.slice(0, idx + 1),
-        newSection,
+        ...newSections,
         ...prev.sections.slice(idx + 1),
       ]
       return { ...prev, sections }
@@ -84,6 +87,24 @@ export default function ExplanationPage() {
     })
   }
 
+  function startEditingTitle() {
+    if (!explanation) return
+    setTitleDraft(explanation.title)
+    setEditingTitle(true)
+    setTimeout(() => titleInputRef.current?.select(), 0)
+  }
+
+  function commitTitle() {
+    if (!explanation || !titleDraft.trim()) { setEditingTitle(false); return }
+    const newTitle = titleDraft.trim()
+    setEditingTitle(false)
+    setExplanation(prev => prev ? { ...prev, title: newTitle } : prev)
+    api.updateTitle(explanation.id, newTitle).catch(err => {
+      console.error(err)
+      setExplanation(prev => prev ? { ...prev, title: explanation.title } : prev)
+    })
+  }
+
   if (loading) return (
     <>
       <header><div className="container"><h1>AI Explains</h1></div></header>
@@ -107,7 +128,23 @@ export default function ExplanationPage() {
       <header>
         <div className="container">
           <Link to="/" className="back">← All explanations</Link>
-          <h1>{explanation.title}</h1>
+          {editingTitle ? (
+            <input
+              ref={titleInputRef}
+              className="title-input"
+              value={titleDraft}
+              onChange={e => setTitleDraft(e.target.value)}
+              onBlur={commitTitle}
+              onKeyDown={e => {
+                if (e.key === 'Enter') commitTitle()
+                if (e.key === 'Escape') setEditingTitle(false)
+              }}
+            />
+          ) : (
+            <h1 className="title-editable" onClick={startEditingTitle} title="Click to edit title">
+              {explanation.title}
+            </h1>
+          )}
         </div>
       </header>
 
@@ -121,7 +158,7 @@ export default function ExplanationPage() {
             isFirst={idx === 0}
             isLast={idx === activeSections.length - 1}
             onUpdate={handleSectionUpdate}
-            onInsertAfter={handleInsertAfter}
+            onInsertAfter={(afterId, newSections) => handleInsertAfter(afterId, newSections)}
             onMoveUp={() => handleMoveUp(section.id)}
             onMoveDown={() => handleMoveDown(section.id)}
             onDelete={() => handleDelete(section.id)}
