@@ -1,0 +1,15 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - HOST=0.0.0.0
+      - FRONTEND_DIR=/app/frontend/dist
+    volumes:
+      - aiexplains-data:/root/.aiexplains
+    restart: unless-stopped
+
+volumes:
+  aiexplains-data:

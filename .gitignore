@@ -1,0 +1,25 @@
+# Go build output
+aiexplains
+backend/aiexplains
+backend/aiexplains-*
+
+# Frontend build output
+frontend/dist/
+frontend/node_modules/
+
+# Runtime data
+~/.aiexplains/
+
+# Environment
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
