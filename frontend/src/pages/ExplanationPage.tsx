@@ -43,50 +43,44 @@ export default function ExplanationPage() {
   }
 
   function handleMoveUp(sectionId: string) {
-    setExplanation(prev => {
-      if (!prev?.sections) return prev
-      const active = prev.sections.filter(s => !s.deleted)
-      const idx = active.findIndex(s => s.id === sectionId)
-      if (idx <= 0) return prev
-      const reordered = [...active]
-      ;[reordered[idx - 1], reordered[idx]] = [reordered[idx], reordered[idx - 1]]
-      const deleted = prev.sections.filter(s => s.deleted)
-      const sections = [...reordered, ...deleted]
-      api.reorderSections(prev.id, reordered.map(s => s.id)).catch(console.error)
-      return { ...prev, sections }
-    })
+    if (!explanation?.sections) return
+    const active = explanation.sections.filter(s => !s.deleted)
+    const idx = active.findIndex(s => s.id === sectionId)
+    if (idx <= 0) return
+    const reordered = [...active]
+    ;[reordered[idx - 1], reordered[idx]] = [reordered[idx], reordered[idx - 1]]
+    const deleted = explanation.sections.filter(s => s.deleted)
+    setExplanation({ ...explanation, sections: [...reordered, ...deleted] })
+    api.reorderSections(explanation.id, reordered.map(s => s.id)).catch(console.error)
   }
 
   function handleMoveDown(sectionId: string) {
-    setExplanation(prev => {
-      if (!prev?.sections) return prev
-      const active = prev.sections.filter(s => !s.deleted)
-      const idx = active.findIndex(s => s.id === sectionId)
-      if (idx === -1 || idx >= active.length - 1) return prev
-      const reordered = [...active]
-      ;[reordered[idx], reordered[idx + 1]] = [reordered[idx + 1], reordered[idx]]
-      const deleted = prev.sections.filter(s => s.deleted)
-      const sections = [...reordered, ...deleted]
-      api.reorderSections(prev.id, reordered.map(s => s.id)).catch(console.error)
-      return { ...prev, sections }
-    })
+    if (!explanation?.sections) return
+    const active = explanation.sections.filter(s => !s.deleted)
+    const idx = active.findIndex(s => s.id === sectionId)
+    if (idx === -1 || idx >= active.length - 1) return
+    const reordered = [...active]
+    ;[reordered[idx], reordered[idx + 1]] = [reordered[idx + 1], reordered[idx]]
+    const deleted = explanation.sections.filter(s => s.deleted)
+    setExplanation({ ...explanation, sections: [...reordered, ...deleted] })
+    api.reorderSections(explanation.id, reordered.map(s => s.id)).catch(console.error)
   }
 
   function handleDelete(sectionId: string) {
+    if (!explanation) return
+    api.deleteSection(explanation.id, sectionId).catch(console.error)
     setExplanation(prev => {
       if (!prev?.sections) return prev
-      const sections = prev.sections.map(s => s.id === sectionId ? { ...s, deleted: true } : s)
-      api.deleteSection(prev.id, sectionId).catch(console.error)
-      return { ...prev, sections }
+      return { ...prev, sections: prev.sections.map(s => s.id === sectionId ? { ...s, deleted: true } : s) }
     })
   }
 
   function handleRestore(sectionId: string) {
+    if (!explanation) return
+    api.restoreSection(explanation.id, sectionId).catch(console.error)
     setExplanation(prev => {
       if (!prev?.sections) return prev
-      const sections = prev.sections.map(s => s.id === sectionId ? { ...s, deleted: false } : s)
-      api.restoreSection(prev.id, sectionId).catch(console.error)
-      return { ...prev, sections }
+      return { ...prev, sections: prev.sections.map(s => s.id === sectionId ? { ...s, deleted: false } : s) }
     })
   }
 
