@@ -466,6 +466,186 @@ button {
   font-size: 0.875rem;
 }
 
+/* Home page two-column layout */
+.home-layout {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+/* Tag filter panel */
+.tag-filter-panel {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  position: sticky;
+  top: 1rem;
+}
+
+.tag-filter-panel h3 {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #374151;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tag-filter-search {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  font-size: 0.85rem;
+  outline: none;
+  margin-bottom: 0.5rem;
+  font-family: inherit;
+}
+
+.tag-filter-search:focus {
+  border-color: #6366f1;
+}
+
+.tag-filter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.tag-filter-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 0.375rem;
+  border: none;
+  background: none;
+  font-size: 0.85rem;
+  color: #374151;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+  font-family: inherit;
+}
+
+.tag-filter-item:hover {
+  background: #f3f4f6;
+}
+
+.tag-filter-item.selected {
+  background: #ede9fe;
+  color: #6366f1;
+  font-weight: 500;
+}
+
+.tag-filter-empty {
+  font-size: 0.8rem;
+  color: #9ca3af;
+  padding: 0.25rem 0.5rem;
+}
+
+.tag-filter-clear {
+  margin-top: 0.5rem;
+  width: 100%;
+  padding: 0.35rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  background: none;
+  font-size: 0.8rem;
+  color: #6b7280;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.tag-filter-clear:hover {
+  background: #f3f4f6;
+}
+
+/* Tag pills (on explanation cards and explanation page) */
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: #ede9fe;
+  color: #6366f1;
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.tag-pill-remove {
+  background: none;
+  border: none;
+  padding: 0;
+  line-height: 1;
+  font-size: 0.85rem;
+  color: #6366f1;
+  cursor: pointer;
+  opacity: 0.6;
+  display: flex;
+  align-items: center;
+}
+
+.tag-pill-remove:hover {
+  opacity: 1;
+}
+
+/* Tags row on cards */
+.card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+}
+
+/* Tags section on explanation page */
+.explanation-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 1.5rem;
+}
+
+.tag-add-btn {
+  background: none;
+  border: 1px dashed #d1d5db;
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.75rem;
+  color: #9ca3af;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.tag-add-btn:hover {
+  border-color: #6366f1;
+  color: #6366f1;
+}
+
+.tag-add-form {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.tag-add-input {
+  padding: 0.15rem 0.5rem;
+  border: 1px solid #6366f1;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  outline: none;
+  width: 120px;
+  font-family: inherit;
+}
+
 /* Regenerate (empty-state) form */
 .regen-form {
   background: #fff;

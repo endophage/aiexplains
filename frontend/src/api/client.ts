@@ -16,8 +16,23 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  listExplanations: () =>
-    request<Explanation[]>('/explanations'),
+  listExplanations: (tags?: string[]) =>
+    request<Explanation[]>('/explanations' + (tags?.length ? `?tags=${tags.join(',')}` : '')),
+
+  listTags: () =>
+    request<string[]>('/tags'),
+
+  addTag: (explanationId: string, tag: string) =>
+    request<{ tag: string }>(`/explanations/${explanationId}/tags`, {
+      method: 'POST',
+      body: JSON.stringify({ tag }),
+    }),
+
+  removeTag: (explanationId: string, tag: string) =>
+    request<void>(`/explanations/${explanationId}/tags/${encodeURIComponent(tag)}`, { method: 'DELETE' }),
+
+  deleteTag: (tag: string) =>
+    request<void>(`/tags/${encodeURIComponent(tag)}`, { method: 'DELETE' }),
 
   createExplanation: (topic: string) =>
     request<Explanation>('/explanations', {

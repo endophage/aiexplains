@@ -34,6 +34,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/explanations/{id}/sections/{sectionId}", h.DeleteSection)
 	mux.HandleFunc("POST /api/explanations/{id}/sections/{sectionId}/restore", h.RestoreSection)
 	mux.HandleFunc("POST /api/explanations/{id}/reorder", h.ReorderSections)
+	mux.HandleFunc("GET /api/tags", h.ListTags)
+	mux.HandleFunc("DELETE /api/tags/{tag}", h.DeleteTag)
+	mux.HandleFunc("POST /api/explanations/{id}/tags", h.AddExplanationTag)
+	mux.HandleFunc("DELETE /api/explanations/{id}/tags/{tag}", h.RemoveExplanationTag)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

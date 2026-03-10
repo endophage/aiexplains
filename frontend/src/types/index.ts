@@ -14,6 +14,7 @@ export interface Explanation {
   id: string
   title: string
   topic: string
+  tags: string[]
   created_at: string
   updated_at: string
   sections?: Section[]

@@ -33,16 +33,22 @@ type ExplanationResponse struct {
 	ID        string            `json:"id"`
 	Title     string            `json:"title"`
 	Topic     string            `json:"topic"`
+	Tags      []string          `json:"tags"`
 	CreatedAt string            `json:"created_at"`
 	UpdatedAt string            `json:"updated_at"`
 	Sections  []SectionResponse `json:"sections,omitempty"`
 }
 
 func toExplanationResponse(e *db.Explanation, sections []SectionResponse) ExplanationResponse {
+	tags := e.Tags
+	if tags == nil {
+		tags = []string{}
+	}
 	return ExplanationResponse{
 		ID:        e.ID,
 		Title:     e.Title,
 		Topic:     e.Topic,
+		Tags:      tags,
 		CreatedAt: e.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt: e.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 		Sections:  sections,
@@ -67,7 +73,15 @@ func sectionsToResponse(sections []htmlutil.SectionData) []SectionResponse {
 }
 
 func (h *Handler) ListExplanations(w http.ResponseWriter, r *http.Request) {
-	explanations, err := h.db.ListExplanations()
+	var filterTags []string
+	if raw := r.URL.Query().Get("tags"); raw != "" {
+		for _, t := range strings.Split(raw, ",") {
+			if t = strings.TrimSpace(t); t != "" {
+				filterTags = append(filterTags, t)
+			}
+		}
+	}
+	explanations, err := h.db.ListExplanations(filterTags)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list explanations")
 		return

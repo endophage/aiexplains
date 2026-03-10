@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Explanation, Section } from '../types'
@@ -15,6 +15,10 @@ export default function ExplanationPage() {
   const [regenPrompt, setRegenPrompt] = useState('')
   const [regenerating, setRegenerating] = useState(false)
   const [regenError, setRegenError] = useState<string | null>(null)
+  const [allTags, setAllTags] = useState<string[]>([])
+  const [addingTag, setAddingTag] = useState(false)
+  const [tagDraft, setTagDraft] = useState('')
+  const tagInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!id) return
@@ -22,6 +26,7 @@ export default function ExplanationPage() {
       .then(setExplanation)
       .catch(() => setError('Failed to load explanation'))
       .finally(() => setLoading(false))
+    api.listTags().then(setAllTags).catch(() => {})
   }, [id])
 
   function handleSectionUpdate(updatedSection: Section) {
@@ -108,6 +113,32 @@ export default function ExplanationPage() {
     })
   }
 
+  async function handleAddTag(e?: FormEvent | KeyboardEvent) {
+    e?.preventDefault()
+    if (!explanation || !tagDraft.trim()) return
+    const tag = tagDraft.trim().toLowerCase()
+    setTagDraft('')
+    setAddingTag(false)
+    setExplanation(prev => prev ? { ...prev, tags: [...(prev.tags ?? []).filter(t => t !== tag), tag] } : prev)
+    setAllTags(prev => prev.includes(tag) ? prev : [...prev, tag].sort())
+    api.addTag(explanation.id, tag).catch(() => {
+      setExplanation(prev => prev ? { ...prev, tags: (prev.tags ?? []).filter(t => t !== tag) } : prev)
+    })
+  }
+
+  function handleRemoveTag(tag: string) {
+    if (!explanation) return
+    setExplanation(prev => prev ? { ...prev, tags: (prev.tags ?? []).filter(t => t !== tag) } : prev)
+    api.removeTag(explanation.id, tag).catch(() => {
+      setExplanation(prev => prev ? { ...prev, tags: [...(prev.tags ?? []), tag] } : prev)
+    })
+  }
+
+  function startAddingTag() {
+    setAddingTag(true)
+    setTimeout(() => tagInputRef.current?.focus(), 0)
+  }
+
   async function handleRegenerate(e: FormEvent) {
     e.preventDefault()
     if (!explanation || regenerating) return
@@ -172,6 +203,35 @@ export default function ExplanationPage() {
       </header>
 
       <main className="container">
+        <div className="explanation-tags">
+          {(explanation.tags ?? []).map(tag => (
+            <span key={tag} className="tag-pill">
+              {tag}
+              <button className="tag-pill-remove" title="Remove tag" onClick={() => handleRemoveTag(tag)}>×</button>
+            </span>
+          ))}
+          {addingTag ? (
+            <form className="tag-add-form" onSubmit={handleAddTag}>
+              <input
+                ref={tagInputRef}
+                list="tag-suggestions"
+                className="tag-add-input"
+                value={tagDraft}
+                onChange={e => setTagDraft(e.target.value)}
+                placeholder="tag name"
+                onKeyDown={e => { if (e.key === 'Escape') { setAddingTag(false); setTagDraft('') } }}
+              />
+              <datalist id="tag-suggestions">
+                {allTags.map(t => <option key={t} value={t} />)}
+              </datalist>
+              <button type="submit" className="btn btn-ghost btn-sm">Add</button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setAddingTag(false); setTagDraft('') }}>Cancel</button>
+            </form>
+          ) : (
+            <button className="tag-add-btn" onClick={startAddingTag}>+ Tag</button>
+          )}
+        </div>
+
         {activeSections.length === 0 && (
           <div className="regen-form">
             <p className="regen-hint">All sections have been deleted. Generate new content for this explanation.</p>
