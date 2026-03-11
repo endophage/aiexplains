@@ -31,6 +31,12 @@ export const api = {
   removeTag: (explanationId: string, tag: string) =>
     request<void>(`/explanations/${explanationId}/tags/${encodeURIComponent(tag)}`, { method: 'DELETE' }),
 
+  createTag: (tag: string) =>
+    request<{ tag: string }>('/tags', {
+      method: 'POST',
+      body: JSON.stringify({ tag }),
+    }),
+
   deleteTag: (tag: string) =>
     request<void>(`/tags/${encodeURIComponent(tag)}`, { method: 'DELETE' }),
 

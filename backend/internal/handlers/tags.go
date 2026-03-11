@@ -50,6 +50,24 @@ func (h *Handler) AddExplanationTag(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"tag": tag})
 }
 
+func (h *Handler) CreateTag(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Tag string `json:"tag"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Tag) == "" {
+		writeError(w, http.StatusBadRequest, "tag is required")
+		return
+	}
+	tag := strings.ToLower(strings.TrimSpace(body.Tag))
+
+	if _, err := h.db.GetOrCreateTag(tag); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create tag")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]string{"tag": tag})
+}
+
 func (h *Handler) DeleteTag(w http.ResponseWriter, r *http.Request) {
 	tag := r.PathValue("tag")
 	if err := h.db.DeleteTag(tag); err != nil {

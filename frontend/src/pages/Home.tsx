@@ -52,6 +52,19 @@ export default function Home() {
     )
   }
 
+  async function handleCreateTag(e: FormEvent) {
+    e.preventDefault()
+    const tag = tagSearch.trim().toLowerCase()
+    if (!tag || allTags.includes(tag)) return
+    try {
+      await api.createTag(tag)
+      setAllTags(prev => [...prev, tag].sort())
+      setTagSearch('')
+    } catch {
+      // ignore
+    }
+  }
+
   function handleDeleteTag(e: React.MouseEvent, tag: string) {
     e.stopPropagation()
     setAllTags(prev => prev.filter(t => t !== tag))
@@ -144,47 +157,55 @@ export default function Home() {
             )}
           </div>
 
-          {allTags.length > 0 && (
-            <aside className="tag-filter-panel">
-              <h3>Filter by tag</h3>
+          <aside className="tag-filter-panel">
+            <h3>Tags</h3>
+            <form onSubmit={handleCreateTag} style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.5rem' }}>
               <input
                 type="text"
                 className="tag-filter-search"
-                placeholder="Search tags…"
+                placeholder="Search or create tag…"
                 value={tagSearch}
                 onChange={e => setTagSearch(e.target.value)}
+                style={{ flex: 1, marginBottom: 0 }}
               />
-              <div className="tag-filter-list">
-                {filteredTagList.length === 0 ? (
-                  <span className="tag-filter-empty">No tags found</span>
-                ) : (
-                  filteredTagList.map(tag => (
-                    <button
-                      key={tag}
-                      className={`tag-filter-item${selectedTags.includes(tag) ? ' selected' : ''}`}
-                      onClick={() => toggleTag(tag)}
-                    >
-                      <span style={{ fontSize: '0.7rem', flexShrink: 0 }}>{selectedTags.includes(tag) ? '✓' : '○'}</span>
-                      <span style={{ flex: 1 }}>{tag}</span>
-                      <span
-                        role="button"
-                        title="Delete tag"
-                        style={{ opacity: 0.4, fontSize: '0.8rem', lineHeight: 1 }}
-                        onClick={e => handleDeleteTag(e, tag)}
-                        onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                        onMouseLeave={e => (e.currentTarget.style.opacity = '0.4')}
-                      >×</span>
-                    </button>
-                  ))
-                )}
-              </div>
-              {selectedTags.length > 0 && (
-                <button className="tag-filter-clear" onClick={() => setSelectedTags([])}>
-                  Clear filters ({selectedTags.length})
+              {tagSearch.trim() && !allTags.includes(tagSearch.trim().toLowerCase()) && (
+                <button type="submit" className="btn btn-primary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>
+                  + Add
                 </button>
               )}
-            </aside>
-          )}
+            </form>
+            <div className="tag-filter-list">
+              {filteredTagList.length === 0 ? (
+                <span className="tag-filter-empty">
+                  {allTags.length === 0 ? 'No tags yet. Type above to create one.' : 'No tags found'}
+                </span>
+              ) : (
+                filteredTagList.map(tag => (
+                  <button
+                    key={tag}
+                    className={`tag-filter-item${selectedTags.includes(tag) ? ' selected' : ''}`}
+                    onClick={() => toggleTag(tag)}
+                  >
+                    <span style={{ fontSize: '0.7rem', flexShrink: 0 }}>{selectedTags.includes(tag) ? '✓' : '○'}</span>
+                    <span style={{ flex: 1 }}>{tag}</span>
+                    <span
+                      role="button"
+                      title="Delete tag"
+                      style={{ opacity: 0.4, fontSize: '0.8rem', lineHeight: 1 }}
+                      onClick={e => handleDeleteTag(e, tag)}
+                      onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                      onMouseLeave={e => (e.currentTarget.style.opacity = '0.4')}
+                    >×</span>
+                  </button>
+                ))
+              )}
+            </div>
+            {selectedTags.length > 0 && (
+              <button className="tag-filter-clear" onClick={() => setSelectedTags([])}>
+                Clear filters ({selectedTags.length})
+              </button>
+            )}
+          </aside>
         </div>
       </main>
     </>

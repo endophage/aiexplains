@@ -1,16 +1,23 @@
 # AI Explains
 
-An AI-powered explanation tool. Submit a topic and Claude generates a structured, multi-section HTML explanation stored locally. Each section can be further explored through follow-up questions, extended with new sections, reordered, or deleted. All content is versioned so you can navigate between explanations over time.
+AI Explains is an alternate UI for LLMs that helps you build a coherent document. I developed it because I found LLMs extremely useful for helping me understand concepts but as I would drill down into one topic I'd end up with a fragmented back and forth thread of consciousness. It was a challenge to put all the pieces back into the larger context. I also wanted something I could easiy refer back to later.
+
+AI Explains takes the response to your prompt and creates a document broken up into sections. You can then ask further questions to expand on each sub section of the response. This could result in further new sections being added as the explanations get deeper and more complex.
+
+You can also add additional sections to a document if you feel the response is missing something.
+
+Currently this is impemented by exec'ing the Claude CLI. Other LLMs and integration
+methods may be added in the future.
 
 ## Features
 
 - Generate multi-section explanations on any topic
-- Ask follow-up questions per section (creates a new version with a richer answer)
+- Ask follow-up questions per section (creates a new version of the seciont with a richer answer)
 - Add new sections after any existing section
 - Reorder sections with up/down arrows
-- Soft-delete sections (moved to a collapsed area, restorable)
+- Soft-delete sections (moved to a collapsed appendix, restorable)
 - Version navigation within each section (← →)
-- Editable titles (click the title to edit)
+- Auto generated and editable titles (click the title to edit)
 - All state persisted to disk — reload and pick up where you left off
 
 ## Requirements
