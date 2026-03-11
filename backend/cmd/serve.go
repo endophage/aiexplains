@@ -27,7 +27,7 @@ var serveCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(serveCmd)
-	serveCmd.Flags().Int("port", 3000, "Port to listen on")
+	serveCmd.Flags().Int("port", 0, "Port to listen on (0 = pick a free port automatically)")
 	serveCmd.Flags().String("host", "127.0.0.1", "Host address to listen on (use 0.0.0.0 for all interfaces)")
 	serveCmd.Flags().String("frontend-dir", "", "Path to the built frontend directory")
 	serveCmd.Flags().String("mode", "exec", `AI mode: "exec" uses the local claude CLI, "api" uses the Anthropic SDK`)
@@ -81,12 +81,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if host == "" {
 		host = "127.0.0.1"
 	}
-	addr := fmt.Sprintf("%s:%d", host, port)
 
-	ln, err := net.Listen("tcp", addr)
+	ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, port))
 	if err != nil {
-		return fmt.Errorf("listening on %s: %w", addr, err)
+		return fmt.Errorf("listening on %s:%d: %w", host, port, err)
 	}
+	addr := ln.Addr().String()
 	log.Printf("Starting server on http://%s", addr)
 
 	if viper.GetBool("webview") {
