@@ -1,4 +1,5 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useEffect, useRef, useState, type FormEvent } from 'react'
+import mermaid from 'mermaid'
 import { api } from '../api/client'
 import type { Section } from '../types'
 
@@ -48,6 +49,14 @@ export default function SectionComponent({
     ?? ''
 
   const { title, bodyHTML } = useMemo(() => parseContent(currentContent), [currentContent])
+
+  const bodyRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (bodyRef.current) {
+      mermaid.run({ nodes: Array.from(bodyRef.current.querySelectorAll('.mermaid')) })
+        .catch(() => {})
+    }
+  }, [bodyHTML])
 
   async function handleAsk(e: FormEvent) {
     e.preventDefault()
@@ -171,7 +180,7 @@ export default function SectionComponent({
           </form>
         )}
 
-        <div className="section-body" dangerouslySetInnerHTML={{ __html: bodyHTML }} />
+        <div ref={bodyRef} className="section-body" dangerouslySetInnerHTML={{ __html: bodyHTML }} />
 
         {showExtend && (
           <form className="inline-form inline-form--extend" onSubmit={handleExtend}>

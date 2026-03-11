@@ -29,6 +29,8 @@ func NewClient(localExec bool) *Client {
 	return c
 }
 
+const mermaidInstruction = `- For any diagrams, flowcharts, sequence diagrams, entity-relationship diagrams, or other visual structures, ALWAYS use Mermaid.js syntax inside a <div class="mermaid"> block. Never use ASCII art or plain-text diagrams.`
+
 // GenerateExplanation asks Claude to produce a title and multi-section HTML explanation for a topic.
 // Returns (title, sectionsHTML, error).
 func (c *Client) GenerateExplanation(ctx context.Context, topic string) (string, string, error) {
@@ -49,8 +51,9 @@ Requirements:
 
 4. Use descriptive kebab-case section IDs (e.g., section-overview, section-key-concepts, section-examples).
 5. Use appropriate HTML elements: h2 for section titles, p for paragraphs, ul/ol for lists, code/pre for code samples.
-6. Do NOT include <!DOCTYPE>, <html>, <head>, or <body> tags.
-7. Return ONLY the h1 title followed by the HTML sections. No markdown, no code fences, no text outside of HTML.`, topic)
+6. %s
+7. Do NOT include <!DOCTYPE>, <html>, <head>, or <body> tags.
+8. Return ONLY the h1 title followed by the HTML sections. No markdown, no code fences, no text outside of HTML.`, topic, mermaidInstruction)
 
 	var raw string
 	var err error
@@ -110,8 +113,9 @@ Requirements:
 
 3. Use descriptive kebab-case section IDs (e.g., section-overview, section-key-concepts, section-examples).
 4. Use appropriate HTML elements: h2 for section titles, p for paragraphs, ul/ol for lists, code/pre for code samples.
-5. Do NOT include <!DOCTYPE>, <html>, <head>, or <body> tags.
-6. Return ONLY the HTML sections. No markdown, no code fences, no text outside of HTML.`, topic, guidance)
+5. %s
+6. Do NOT include <!DOCTYPE>, <html>, <head>, or <body> tags.
+7. Return ONLY the HTML sections. No markdown, no code fences, no text outside of HTML.`, topic, guidance, mermaidInstruction)
 
 	if c.localExec {
 		return c.execClaude(ctx, prompt)
@@ -145,9 +149,10 @@ Requirements:
 
 3. Use unique descriptive kebab-case section IDs that are NOT in the existing IDs list.
 4. Use appropriate HTML elements: h2 for section titles, p for paragraphs, ul/ol for lists, code/pre for code.
-5. Do NOT include <!DOCTYPE>, <html>, <head>, or <body> tags.
-6. Return ONLY the HTML sections. No markdown, no code fences, no text outside of HTML.`,
-		topic, afterSectionContent, userPrompt, strings.Join(existingIDs, ", "))
+5. %s
+6. Do NOT include <!DOCTYPE>, <html>, <head>, or <body> tags.
+7. Return ONLY the HTML sections. No markdown, no code fences, no text outside of HTML.`,
+		topic, afterSectionContent, userPrompt, strings.Join(existingIDs, ", "), mermaidInstruction)
 
 	if c.localExec {
 		return c.execClaude(ctx, prompt)
@@ -172,6 +177,8 @@ return two or more complete section divs in this format:
 <p>Content</p>
 </div>
 </div>
+
+For any diagrams, flowcharts, sequence diagrams, entity-relationship diagrams, or other visual structures, ALWAYS use Mermaid.js syntax inside a <div class="mermaid"> block. Never use ASCII art or plain-text diagrams.
 
 Choose whichever option best serves the user's question. No markdown, no code fences. Return only valid HTML.`
 

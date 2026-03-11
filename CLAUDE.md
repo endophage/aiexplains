@@ -23,7 +23,7 @@ the doc to be viewing the most recent of each section.
 - LLMs
     - The backend should interact with Claude via the official Go SDK.
 
-- Dockerfiles and a docker compose file are used to run the service which is then accessible from a browser.
+- The service is primarily designed to run locally, exec'ing the Claude CLI to leverage your already authenticated account.
 
 ## Code organization
 
