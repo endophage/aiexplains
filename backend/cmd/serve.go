@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/endophage/aiexplains/backend/internal"
 	"github.com/endophage/aiexplains/backend/internal/db"
 	"github.com/endophage/aiexplains/backend/internal/handlers"
 	"github.com/spf13/cobra"
@@ -24,11 +25,11 @@ func init() {
 	serveCmd.Flags().Int("port", 3000, "Port to listen on")
 	serveCmd.Flags().String("host", "127.0.0.1", "Host address to listen on (use 0.0.0.0 for all interfaces)")
 	serveCmd.Flags().String("frontend-dir", "", "Path to the built frontend directory")
-	serveCmd.Flags().Bool("localexec", false, "Use the local `claude` CLI instead of the Anthropic SDK")
+	serveCmd.Flags().String("mode", "exec", `AI mode: "exec" uses the local claude CLI, "api" uses the Anthropic SDK`)
 	viper.BindPFlag("port", serveCmd.Flags().Lookup("port"))
 	viper.BindPFlag("host", serveCmd.Flags().Lookup("host"))
 	viper.BindPFlag("frontend_dir", serveCmd.Flags().Lookup("frontend-dir"))
-	viper.BindPFlag("localexec", serveCmd.Flags().Lookup("localexec"))
+	viper.BindPFlag("mode", serveCmd.Flags().Lookup("mode"))
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
@@ -50,12 +51,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	mux := http.NewServeMux()
 
-	localExec := viper.GetBool("localexec")
-	if localExec {
-		log.Println("Using local `claude` CLI for AI requests")
+	mode := viper.GetString("mode")
+	if mode != internal.ModeExec && mode != internal.ModeAPI {
+		return fmt.Errorf("invalid --mode %q: must be %q or %q", mode, internal.ModeExec, internal.ModeAPI)
 	}
+	log.Printf("AI mode: %s", mode)
 
-	h := handlers.New(database, dataDir, localExec)
+	h := handlers.New(database, dataDir, mode)
 	h.RegisterRoutes(mux)
 
 	frontendDir := viper.GetString("frontend_dir")

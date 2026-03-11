@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/endophage/aiexplains/backend/internal"
 )
 
 type Message struct {
@@ -18,12 +19,12 @@ type Message struct {
 // Client handles AI requests via either the Anthropic SDK or the local `claude` CLI.
 type Client struct {
 	sdkClient *anthropic.Client
-	localExec bool
+	mode      string // "exec" or "api"
 }
 
-func NewClient(localExec bool) *Client {
-	c := &Client{localExec: localExec}
-	if !localExec {
+func NewClient(mode string) *Client {
+	c := &Client{mode: mode}
+	if mode == internal.ModeAPI {
 		c.sdkClient = anthropic.NewClient()
 	}
 	return c
@@ -57,7 +58,7 @@ Requirements:
 
 	var raw string
 	var err error
-	if c.localExec {
+	if c.mode == internal.ModeExec {
 		raw, err = c.execClaude(ctx, prompt)
 	} else {
 		raw, err = c.sdkGenerate(ctx, prompt)
@@ -117,7 +118,7 @@ Requirements:
 6. Do NOT include <!DOCTYPE>, <html>, <head>, or <body> tags.
 7. Return ONLY the HTML sections. No markdown, no code fences, no text outside of HTML.`, topic, guidance, mermaidInstruction)
 
-	if c.localExec {
+	if c.mode == internal.ModeExec {
 		return c.execClaude(ctx, prompt)
 	}
 	return c.sdkGenerate(ctx, prompt)
@@ -154,7 +155,7 @@ Requirements:
 7. Return ONLY the HTML sections. No markdown, no code fences, no text outside of HTML.`,
 		topic, afterSectionContent, userPrompt, strings.Join(existingIDs, ", "), mermaidInstruction)
 
-	if c.localExec {
+	if c.mode == internal.ModeExec {
 		return c.execClaude(ctx, prompt)
 	}
 	return c.sdkGenerate(ctx, prompt)
@@ -182,7 +183,7 @@ For any diagrams, flowcharts, sequence diagrams, entity-relationship diagrams, o
 
 Choose whichever option best serves the user's question. No markdown, no code fences. Return only valid HTML.`
 
-	if c.localExec {
+	if c.mode == internal.ModeExec {
 		return c.execExpandSection(ctx, system, topic, sectionContent, userPrompt, history)
 	}
 	return c.sdkExpandSection(ctx, system, topic, sectionContent, userPrompt, history)

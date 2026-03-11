@@ -14,11 +14,11 @@ type Handler struct {
 	ai      *ai.Client
 }
 
-func New(database *db.DB, dataDir string, localExec bool) *Handler {
+func New(database *db.DB, dataDir string, mode string) *Handler {
 	return &Handler{
 		db:      database,
 		dataDir: dataDir,
-		ai:      ai.NewClient(localExec),
+		ai:      ai.NewClient(mode),
 	}
 }
 
