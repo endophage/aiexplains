@@ -97,6 +97,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		w.SetTitle("AIExplains")
 		w.SetSize(1280, 800, webview.HintNone)
 		w.Navigate(fmt.Sprintf("http://%s", addr))
+		setupMenu()
 		w.Run()
 		return nil
 	}
