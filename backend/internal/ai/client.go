@@ -4,12 +4,31 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/endophage/aiexplains/backend/internal"
 )
+
+// claudePath resolves the full path to the claude executable, augmenting PATH
+// with common install locations so it works inside macOS app bundles.
+func claudePath() (string, error) {
+	extraPaths := []string{
+		"/usr/local/bin",
+		"/opt/homebrew/bin",
+		"/usr/bin",
+		os.ExpandEnv("$HOME/.local/bin"),
+		os.ExpandEnv("$HOME/.npm-global/bin"),
+	}
+	current := os.Getenv("PATH")
+	augmented := current + ":" + strings.Join(extraPaths, ":")
+	if err := os.Setenv("PATH", augmented); err != nil {
+		return "", err
+	}
+	return exec.LookPath("claude")
+}
 
 type Message struct {
 	Role    string
@@ -191,14 +210,18 @@ Choose whichever option best serves the user's question. No markdown, no code fe
 
 // execClaude runs the local `claude` CLI with the given prompt via stdin.
 func (c *Client) execClaude(ctx context.Context, prompt string) (string, error) {
-	cmd := exec.CommandContext(ctx, "claude", "-p")
+	claudeBin, err := claudePath()
+	if err != nil {
+		return "", fmt.Errorf("finding claude executable: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, claudeBin, "-p")
 	cmd.Stdin = strings.NewReader(prompt)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
 		stdoutStr := strings.TrimSpace(stdout.String())
 		stderrStr := strings.TrimSpace(stderr.String())
