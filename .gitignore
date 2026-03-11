@@ -7,6 +7,13 @@ backend/aiexplains-*
 frontend/dist/
 frontend/node_modules/
 
+# Embedded frontend (populated at app build time, not checked in)
+backend/frontend/
+
+# App bundle and generated icon
+*.app
+assets/AppIcon.icns
+
 # Runtime data
 ~/.aiexplains/
 

@@ -2,16 +2,21 @@ package cmd
 
 import (
 	"fmt"
+	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/endophage/aiexplains/backend/internal"
 	"github.com/endophage/aiexplains/backend/internal/db"
 	"github.com/endophage/aiexplains/backend/internal/handlers"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	webview "github.com/webview/webview_go"
 )
 
 var serveCmd = &cobra.Command{
@@ -26,10 +31,12 @@ func init() {
 	serveCmd.Flags().String("host", "127.0.0.1", "Host address to listen on (use 0.0.0.0 for all interfaces)")
 	serveCmd.Flags().String("frontend-dir", "", "Path to the built frontend directory")
 	serveCmd.Flags().String("mode", "exec", `AI mode: "exec" uses the local claude CLI, "api" uses the Anthropic SDK`)
+	serveCmd.Flags().Bool("webview", false, "Open the app in an embedded webview window instead of the system browser")
 	viper.BindPFlag("port", serveCmd.Flags().Lookup("port"))
 	viper.BindPFlag("host", serveCmd.Flags().Lookup("host"))
 	viper.BindPFlag("frontend_dir", serveCmd.Flags().Lookup("frontend-dir"))
 	viper.BindPFlag("mode", serveCmd.Flags().Lookup("mode"))
+	viper.BindPFlag("webview", serveCmd.Flags().Lookup("webview"))
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
@@ -61,11 +68,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 	h.RegisterRoutes(mux)
 
 	frontendDir := viper.GetString("frontend_dir")
-	if frontendDir == "" {
-		frontendDir = "./frontend/dist"
+	if frontendDir != "" {
+		mux.Handle("/", newSPAHandler(os.DirFS(frontendDir)))
+	} else if embFS, ok := embeddedFrontend(); ok {
+		mux.Handle("/", newSPAHandler(embFS))
+	} else {
+		mux.Handle("/", newSPAHandler(os.DirFS("./frontend/dist")))
 	}
-
-	mux.Handle("/", newSPAHandler(frontendDir))
 
 	port := viper.GetInt("port")
 	host := viper.GetString("host")
@@ -73,29 +82,49 @@ func runServe(cmd *cobra.Command, args []string) error {
 		host = "127.0.0.1"
 	}
 	addr := fmt.Sprintf("%s:%d", host, port)
+
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listening on %s: %w", addr, err)
+	}
 	log.Printf("Starting server on http://%s", addr)
 
-	return http.ListenAndServe(addr, mux)
+	if viper.GetBool("webview") {
+		go http.Serve(ln, mux) //nolint:errcheck
+
+		w := webview.New(false)
+		defer w.Destroy()
+		w.SetTitle("AIExplains")
+		w.SetSize(1280, 800, webview.HintNone)
+		w.Navigate(fmt.Sprintf("http://%s", addr))
+		w.Run()
+		return nil
+	}
+
+	return http.Serve(ln, mux)
 }
 
 // spaHandler serves a React SPA, falling back to index.html for unknown routes.
 type spaHandler struct {
-	dir      string
+	fsys       fs.FS
 	fileServer http.Handler
 }
 
-func newSPAHandler(dir string) *spaHandler {
+func newSPAHandler(fsys fs.FS) *spaHandler {
 	return &spaHandler{
-		dir:      dir,
-		fileServer: http.FileServer(http.Dir(dir)),
+		fsys:       fsys,
+		fileServer: http.FileServerFS(fsys),
 	}
 }
 
 func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	path := filepath.Join(h.dir, filepath.Clean(r.URL.Path))
-	_, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		http.ServeFile(w, r, filepath.Join(h.dir, "index.html"))
+	name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+	if name == "" {
+		name = "."
+	}
+	_, err := fs.Stat(h.fsys, name)
+	if err != nil {
+		http.ServeFileFS(w, r, h.fsys, "index.html")
 		return
 	}
 	h.fileServer.ServeHTTP(w, r)
