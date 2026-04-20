@@ -1,7 +1,10 @@
 import { useMemo, useEffect, useRef, useState, type FormEvent } from 'react'
+import { createPortal } from 'react-dom'
 import mermaid from 'mermaid'
 import { api } from '../api/client'
 import type { Section } from '../types'
+
+type ExpandedDiagram = { type: 'svg'; html: string } | { type: 'img'; src: string; alt: string }
 
 interface Props {
   section: Section
@@ -50,6 +53,8 @@ export default function SectionComponent({
 
   const { title, bodyHTML } = useMemo(() => parseContent(currentContent), [currentContent])
 
+  const [expandedDiagram, setExpandedDiagram] = useState<ExpandedDiagram | null>(null)
+
   const bodyRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (bodyRef.current) {
@@ -57,6 +62,29 @@ export default function SectionComponent({
         .catch(() => {})
     }
   }, [bodyHTML])
+
+  useEffect(() => {
+    const el = bodyRef.current
+    if (!el) return
+    function handleClick(e: globalThis.MouseEvent) {
+      const target = e.target as Element
+      const svg = target.closest('svg')
+      const img = target.closest('img')
+      if (svg) {
+        const clone = svg.cloneNode(true) as SVGElement
+        clone.removeAttribute('width')
+        clone.removeAttribute('height')
+        clone.style.removeProperty('width')
+        clone.style.removeProperty('height')
+        clone.style.removeProperty('max-width')
+        setExpandedDiagram({ type: 'svg', html: clone.outerHTML })
+      } else if (img) {
+        setExpandedDiagram({ type: 'img', src: (img as HTMLImageElement).src, alt: (img as HTMLImageElement).alt })
+      }
+    }
+    el.addEventListener('click', handleClick)
+    return () => el.removeEventListener('click', handleClick)
+  }, [])
 
   async function handleAsk(e: FormEvent) {
     e.preventDefault()
@@ -99,6 +127,16 @@ export default function SectionComponent({
   const busy = asking || extending
 
   return (
+    <>
+    {expandedDiagram && createPortal(
+      <div className="diagram-lightbox" onClick={() => setExpandedDiagram(null)}>
+        {expandedDiagram.type === 'svg'
+          ? <div className="diagram-lightbox-inner" dangerouslySetInnerHTML={{ __html: expandedDiagram.html }} />
+          : <img className="diagram-lightbox-inner" src={expandedDiagram.src} alt={expandedDiagram.alt} />
+        }
+      </div>,
+      document.body
+    )}
     <div className="section">
       {/* Left controls column — order: ↑ ? + 🗑 ↓ */}
       <div className="section-controls">
@@ -203,5 +241,6 @@ export default function SectionComponent({
         )}
       </div>
     </div>
+    </>
   )
 }

@@ -646,6 +646,52 @@ button {
   font-family: inherit;
 }
 
+/* Diagram zoom-in cursor */
+.section-body svg,
+.section-body img {
+  cursor: zoom-in;
+}
+
+/* Diagram lightbox overlay */
+.diagram-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+}
+
+.diagram-lightbox-inner {
+  background: #fff;
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  max-width: 92vw;
+  max-height: 92vh;
+}
+
+.diagram-lightbox-inner svg {
+  display: block;
+  width: 80vw;
+  height: auto;
+  max-height: 80vh;
+}
+
+.diagram-lightbox-inner img {
+  display: block;
+  max-width: 88vw;
+  max-height: 88vh;
+  width: auto;
+  height: auto;
+}
+
 /* Regenerate (empty-state) form */
 .regen-form {
   background: #fff;
