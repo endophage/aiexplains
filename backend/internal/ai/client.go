@@ -180,6 +180,43 @@ Requirements:
 	return c.sdkGenerate(ctx, prompt)
 }
 
+// BranchSection asks Claude to produce child sections that dive deeper into a parent section.
+func (c *Client) BranchSection(ctx context.Context, topic, parentContent, userPrompt string, existingIDs []string) (string, error) {
+	prompt := fmt.Sprintf(`You are generating child sections that go deeper into a specific section of an HTML explanation about "%s".
+
+Parent section:
+---
+%s
+---
+
+The user wants to explore: %s
+
+Existing section IDs (do NOT reuse): %s
+
+Requirements:
+1. Generate one or more child HTML sections that elaborate on the parent section's topic.
+2. Each section MUST follow this exact format:
+
+<div class="section" id="section-{slug}" data-current-version="1">
+<div class="section-version" data-version="1">
+<h2>Section Title</h2>
+<p>Content...</p>
+</div>
+</div>
+
+3. Use unique descriptive kebab-case section IDs not in the existing list.
+4. Use appropriate HTML elements: h2 for titles, p for paragraphs, ul/ol for lists, code/pre for code.
+5. %s
+6. Do NOT include <!DOCTYPE>, <html>, <head>, or <body> tags.
+7. Return ONLY the HTML sections. No markdown, no code fences, no text outside HTML.`,
+		topic, parentContent, userPrompt, strings.Join(existingIDs, ", "), mermaidInstruction)
+
+	if c.mode == internal.ModeExec {
+		return c.execClaude(ctx, prompt)
+	}
+	return c.sdkGenerate(ctx, prompt)
+}
+
 // ExpandSection asks Claude to produce an expanded version of a section.
 // history is the prior conversation for this section (may be empty for first expansion).
 func (c *Client) ExpandSection(ctx context.Context, topic, sectionContent, userPrompt string, history []Message) (string, error) {

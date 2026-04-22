@@ -5,6 +5,7 @@ export interface SectionVersion {
 
 export interface Section {
   id: string
+  parent_id?: string | null
   current_version: number
   deleted?: boolean
   versions: SectionVersion[]

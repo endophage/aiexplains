@@ -12,11 +12,14 @@ interface Props {
   topic: string
   isFirst: boolean
   isLast: boolean
+  hasChildren: boolean
   onUpdate: (section: Section) => void
   onInsertAfter: (afterSectionId: string, newSections: Section[]) => void
   onMoveUp: () => void
   onMoveDown: () => void
   onDelete: () => void
+  onDrillIn: () => void
+  onBranchCreated: (newSections: Section[]) => void
 }
 
 function parseContent(html: string): { title: string; bodyHTML: string } {
@@ -29,8 +32,8 @@ function parseContent(html: string): { title: string; bodyHTML: string } {
 
 export default function SectionComponent({
   section, explanationId, topic: _topic,
-  isFirst, isLast,
-  onUpdate, onInsertAfter, onMoveUp, onMoveDown, onDelete,
+  isFirst, isLast, hasChildren,
+  onUpdate, onInsertAfter, onMoveUp, onMoveDown, onDelete, onDrillIn, onBranchCreated,
 }: Props) {
   const [displayVersion, setDisplayVersion] = useState(section.current_version)
   const [showAsk, setShowAsk] = useState(false)
@@ -42,6 +45,15 @@ export default function SectionComponent({
   const [extendPrompt, setExtendPrompt] = useState('')
   const [extending, setExtending] = useState(false)
   const [extendError, setExtendError] = useState<string | null>(null)
+
+  const [showBranch, setShowBranch] = useState(false)
+  const [branchPrompt, setBranchPrompt] = useState('')
+  const [branching, setBranching] = useState(false)
+  const [branchError, setBranchError] = useState<string | null>(null)
+
+  const [extractPos, setExtractPos] = useState<{ top: number; left: number } | null>(null)
+  const [extracting, setExtracting] = useState(false)
+  const [extractingChild, setExtractingChild] = useState(false)
 
   const latestVersion = section.current_version
   const sortedVersionNums = [...section.versions.map(v => v.version)].sort((a, b) => a - b)
@@ -62,6 +74,90 @@ export default function SectionComponent({
         .catch(() => {})
     }
   }, [bodyHTML])
+
+  useEffect(() => {
+    function handleSelectionChange() {
+      const sel = window.getSelection()
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) { setExtractPos(null); return }
+      const range = sel.getRangeAt(0)
+      if (!bodyRef.current?.contains(range.commonAncestorContainer)) { setExtractPos(null); return }
+      const rect = range.getBoundingClientRect()
+      if (rect.width === 0 && rect.height === 0) { setExtractPos(null); return }
+      setExtractPos({ top: rect.top + window.scrollY - 44, left: rect.left + rect.width / 2 })
+    }
+    document.addEventListener('selectionchange', handleSelectionChange)
+    return () => document.removeEventListener('selectionchange', handleSelectionChange)
+  }, [])
+
+  function captureSelection() {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0 || !bodyRef.current) return null
+    const range = sel.getRangeAt(0)
+    if (!bodyRef.current.contains(range.commonAncestorContainer)) return null
+    const fragment = range.cloneContents()
+    const tmp = document.createElement('div')
+    tmp.appendChild(fragment)
+    if (!tmp.innerHTML.trim()) return null
+
+    // If the selection starts with a heading, use it as the title and strip it from the body
+    let newTitle: string
+    const firstEl = tmp.firstElementChild
+    if (firstEl && /^H[1-6]$/.test(firstEl.tagName)) {
+      newTitle = firstEl.textContent?.trim() || 'Extracted Section'
+      firstEl.remove()
+    } else {
+      const words = (tmp.textContent ?? '').trim().split(/\s+/).filter(Boolean)
+      newTitle = words.slice(0, 8).join(' ') + (words.length > 8 ? '…' : '') || 'Extracted Section'
+    }
+
+    const extractedHtml = tmp.innerHTML
+    const originalHTML = bodyRef.current.innerHTML
+    range.deleteContents()
+    sel.removeAllRanges()
+    setExtractPos(null)
+    const remainingHtml = bodyRef.current.innerHTML
+    return { extractedHtml, remainingHtml, newTitle, originalHTML }
+  }
+
+  async function handleExtract() {
+    const captured = captureSelection()
+    if (!captured) return
+    const { extractedHtml, remainingHtml, newTitle, originalHTML } = captured
+    setExtracting(true)
+    try {
+      const { section: updated, new_section } = await api.extractSection(
+        explanationId, section.id, extractedHtml, remainingHtml, title, newTitle
+      )
+      onUpdate(updated)
+      setDisplayVersion(updated.current_version)
+      onInsertAfter(section.id, [new_section])
+    } catch (err) {
+      bodyRef.current!.innerHTML = originalHTML
+      console.error('Extract failed:', err)
+    } finally {
+      setExtracting(false)
+    }
+  }
+
+  async function handleExtractChild() {
+    const captured = captureSelection()
+    if (!captured) return
+    const { extractedHtml, remainingHtml, newTitle, originalHTML } = captured
+    setExtractingChild(true)
+    try {
+      const { section: updated, new_section } = await api.extractChildSection(
+        explanationId, section.id, extractedHtml, remainingHtml, title, newTitle
+      )
+      onUpdate(updated)
+      setDisplayVersion(updated.current_version)
+      onBranchCreated([new_section])
+    } catch (err) {
+      bodyRef.current!.innerHTML = originalHTML
+      console.error('Extract child failed:', err)
+    } finally {
+      setExtractingChild(false)
+    }
+  }
 
   useEffect(() => {
     const el = bodyRef.current
@@ -124,10 +220,52 @@ export default function SectionComponent({
     }
   }
 
-  const busy = asking || extending
+  async function handleBranch(e: FormEvent) {
+    e.preventDefault()
+    if (!branchPrompt.trim() || branching) return
+    setBranching(true)
+    setBranchError(null)
+    try {
+      const { sections: newSections } = await api.branchSection(explanationId, section.id, branchPrompt.trim())
+      onBranchCreated(newSections)
+      setBranchPrompt('')
+      setShowBranch(false)
+    } catch (err) {
+      setBranchError(err instanceof Error ? err.message : 'Failed to generate child sections')
+    } finally {
+      setBranching(false)
+    }
+  }
+
+  const busy = asking || extending || branching
 
   return (
     <>
+    {extractPos && createPortal(
+      <div
+        className="extract-toolbar"
+        style={{ top: extractPos.top, left: extractPos.left }}
+        onMouseDown={e => e.preventDefault()}
+      >
+        <button
+          className="extract-btn"
+          onClick={handleExtract}
+          disabled={extracting || extractingChild}
+          title="Extract selection as a new sibling section"
+        >
+          {extracting ? '…' : '⊕ Extract as section'}
+        </button>
+        <button
+          className="extract-btn"
+          onClick={handleExtractChild}
+          disabled={extracting || extractingChild}
+          title="Extract selection as a new child section"
+        >
+          {extractingChild ? '…' : '⊕ Make child section'}
+        </button>
+      </div>,
+      document.body
+    )}
     {expandedDiagram && createPortal(
       <div className="diagram-lightbox" onClick={() => setExpandedDiagram(null)}>
         {expandedDiagram.type === 'svg'
@@ -137,8 +275,8 @@ export default function SectionComponent({
       </div>,
       document.body
     )}
-    <div className="section">
-      {/* Left controls column — order: ↑ ? + 🗑 ↓ */}
+    <div className="section" id={`sec-${section.id}`}>
+      {/* Left controls column */}
       <div className="section-controls">
         <button
           className="section-btn"
@@ -158,7 +296,7 @@ export default function SectionComponent({
         </button>
         <button
           className={`section-btn${showExtend ? ' active' : ''}`}
-          title={showExtend ? 'Cancel' : 'Add a new section after this one'}
+          title={showExtend ? 'Cancel' : 'Add a sibling section after this one'}
           onClick={() => { setShowExtend(v => !v); setExtendError(null) }}
           disabled={busy}
         >
@@ -225,7 +363,7 @@ export default function SectionComponent({
             {extendError && <div className="error">{extendError}</div>}
             <textarea
               rows={2}
-              placeholder="What should the new section cover?"
+              placeholder="What should the new sibling section cover?"
               value={extendPrompt}
               onChange={e => setExtendPrompt(e.target.value)}
               disabled={extending}
@@ -238,6 +376,48 @@ export default function SectionComponent({
               </button>
             </div>
           </form>
+        )}
+
+        {showBranch && (
+          <form className="inline-form inline-form--branch" onSubmit={handleBranch}>
+            {branchError && <div className="error">{branchError}</div>}
+            <textarea
+              rows={2}
+              placeholder="What should this branch explore in more depth?"
+              value={branchPrompt}
+              onChange={e => setBranchPrompt(e.target.value)}
+              disabled={branching}
+              autoFocus
+            />
+            <div className="form-actions">
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setShowBranch(false); setBranchError(null) }}>Cancel</button>
+              <button type="submit" className="btn btn-primary btn-sm" disabled={branching || !branchPrompt.trim()}>
+                {branching ? 'Generating…' : 'Add child sections'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+
+      {/* Right controls column */}
+      <div className="section-right-controls">
+        <button
+          className={`section-btn${showBranch ? ' active' : ''}`}
+          title={showBranch ? 'Cancel' : 'Add child sections'}
+          onClick={() => { setShowBranch(v => !v); setBranchError(null) }}
+          disabled={busy}
+        >
+          +
+        </button>
+        {hasChildren && (
+          <button
+            className="section-btn section-btn--drill"
+            title="View child sections"
+            onClick={onDrillIn}
+            disabled={busy}
+          >
+            ›
+          </button>
         )}
       </div>
     </div>

@@ -24,6 +24,7 @@ type SectionVersionResponse struct {
 
 type SectionResponse struct {
 	ID             string                   `json:"id"`
+	ParentID       string                   `json:"parent_id,omitempty"`
 	CurrentVersion int                      `json:"current_version"`
 	Deleted        bool                     `json:"deleted"`
 	Versions       []SectionVersionResponse `json:"versions"`
@@ -64,6 +65,7 @@ func sectionsToResponse(sections []htmlutil.SectionData) []SectionResponse {
 		}
 		resp[i] = SectionResponse{
 			ID:             s.ID,
+			ParentID:       s.ParentID,
 			CurrentVersion: s.CurrentVersion,
 			Deleted:        s.Deleted,
 			Versions:       versions,
@@ -196,10 +198,12 @@ func (h *Handler) ExplainSection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find current section content
+	// Find current section content and parent
 	var currentContent string
+	var sectionParentID string
 	for _, s := range sections {
 		if s.ID == sectionID {
+			sectionParentID = s.ParentID
 			for _, v := range s.Versions {
 				if v.Version == s.CurrentVersion {
 					currentContent = v.Content
@@ -269,6 +273,9 @@ Please provide a more detailed and thorough version of this section. %s`, explan
 	if len(parsedSections) > 0 {
 		versionContent = parsedSections[0].Versions[0].Content
 		extraSections = deduplicateIDs(parsedSections[1:], existingIDs)
+		for i := range extraSections {
+			extraSections[i].ParentID = sectionParentID
+		}
 	} else {
 		versionContent = newContent
 	}
@@ -353,10 +360,12 @@ func (h *Handler) ExtendSection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var afterContent string
+	var parentID string
 	existingIDs := make([]string, 0, len(sections))
 	for _, s := range sections {
 		existingIDs = append(existingIDs, s.ID)
 		if s.ID == sectionID {
+			parentID = s.ParentID
 			for _, v := range s.Versions {
 				if v.Version == s.CurrentVersion {
 					afterContent = v.Content
@@ -391,9 +400,117 @@ func (h *Handler) ExtendSection(w http.ResponseWriter, r *http.Request) {
 	}
 	newSections = deduplicateIDs(newSections, taken)
 
+	// Propagate parent to new sibling sections
+	for i := range newSections {
+		newSections[i].ParentID = parentID
+	}
+
 	// Insert all new sections after the target section (chaining afterID)
 	updatedSections := sections
 	insertAfterID := sectionID
+	for _, ns := range newSections {
+		updatedSections, err = htmlutil.InsertSectionAfter(updatedSections, insertAfterID, ns)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to insert section")
+			return
+		}
+		insertAfterID = ns.ID
+	}
+
+	doc := htmlutil.RenderExplanation(explanation.ID, explanation.Title, updatedSections)
+	if err := os.WriteFile(explanation.FilePath, []byte(doc), 0644); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to write updated explanation")
+		return
+	}
+	h.db.TouchExplanation(id)
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"sections": sectionsToResponse(newSections),
+	})
+}
+
+func (h *Handler) BranchSection(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sectionID := r.PathValue("sectionId")
+
+	var body struct {
+		Prompt string `json:"prompt"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Prompt) == "" {
+		writeError(w, http.StatusBadRequest, "prompt is required")
+		return
+	}
+
+	explanation, err := h.db.GetExplanation(id)
+	if err != nil || explanation == nil {
+		writeError(w, http.StatusNotFound, "explanation not found")
+		return
+	}
+
+	data, err := os.ReadFile(explanation.FilePath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to read explanation file")
+		return
+	}
+
+	sections, err := htmlutil.ParseSections(string(data))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to parse explanation")
+		return
+	}
+
+	var parentContent string
+	existingIDs := make([]string, 0, len(sections))
+	for _, s := range sections {
+		existingIDs = append(existingIDs, s.ID)
+		if s.ID == sectionID {
+			for _, v := range s.Versions {
+				if v.Version == s.CurrentVersion {
+					parentContent = v.Content
+					break
+				}
+			}
+		}
+	}
+	if parentContent == "" {
+		writeError(w, http.StatusNotFound, "section not found")
+		return
+	}
+
+	rawHTML, err := h.ai.BranchSection(r.Context(), explanation.Topic, parentContent, body.Prompt, existingIDs)
+	if err != nil {
+		log.Printf("ERROR BranchSection explanation=%s parent=%s: %v", id, sectionID, err)
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("generating child sections: %v", err))
+		return
+	}
+
+	newSections, err := htmlutil.ParseSections(rawHTML)
+	if err != nil || len(newSections) == 0 {
+		log.Printf("ERROR ParseSections for branch (explanation=%s): err=%v raw=%q", id, err, rawHTML[:min(200, len(rawHTML))])
+		writeError(w, http.StatusInternalServerError, "failed to parse generated sections")
+		return
+	}
+
+	taken := make(map[string]bool, len(existingIDs))
+	for _, sid := range existingIDs {
+		taken[sid] = true
+	}
+	newSections = deduplicateIDs(newSections, taken)
+
+	// All new sections are children of sectionID
+	for i := range newSections {
+		newSections[i].ParentID = sectionID
+	}
+
+	// Append children after the parent (and any existing children) in the flat list
+	updatedSections := sections
+	insertAfterID := sectionID
+	// Skip past any existing children to insert at the end of the children block
+	for _, s := range sections {
+		if s.ParentID == sectionID {
+			insertAfterID = s.ID
+		}
+	}
 	for _, ns := range newSections {
 		updatedSections, err = htmlutil.InsertSectionAfter(updatedSections, insertAfterID, ns)
 		if err != nil {
@@ -676,6 +793,226 @@ func deduplicateIDs(sections []htmlutil.SectionData, taken map[string]bool) []ht
 		}
 		taken[s.ID] = true
 		result[i] = s
+	}
+	return result
+}
+
+func (h *Handler) ExtractSection(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sectionID := r.PathValue("sectionId")
+
+	var body struct {
+		ExtractedHTML string `json:"extracted_html"`
+		RemainingHTML string `json:"remaining_html"`
+		OriginalTitle string `json:"original_title"`
+		NewTitle      string `json:"new_title"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.ExtractedHTML) == "" {
+		writeError(w, http.StatusBadRequest, "extracted_html is required")
+		return
+	}
+
+	explanation, err := h.db.GetExplanation(id)
+	if err != nil || explanation == nil {
+		writeError(w, http.StatusNotFound, "explanation not found")
+		return
+	}
+
+	data, err := os.ReadFile(explanation.FilePath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to read explanation file")
+		return
+	}
+
+	sections, err := htmlutil.ParseSections(string(data))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to parse explanation")
+		return
+	}
+
+	// Update current section: new version with original title + remaining body
+	updatedContent := fmt.Sprintf("<h2>%s</h2>%s", htmlutil.HTMLEscape(body.OriginalTitle), body.RemainingHTML)
+	sections, newVersion, err := htmlutil.AddSectionVersion(sections, sectionID, updatedContent)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "section not found")
+		return
+	}
+
+	// Generate unique ID for the new section
+	newTitle := strings.TrimSpace(body.NewTitle)
+	if newTitle == "" {
+		newTitle = "Extracted Section"
+	}
+	existingIDs := make(map[string]bool, len(sections))
+	for _, s := range sections {
+		existingIDs[s.ID] = true
+	}
+	newSectionID := deduplicateIDs([]htmlutil.SectionData{{ID: "section-" + slugify(newTitle)}}, existingIDs)[0].ID
+
+	newSection := htmlutil.SectionData{
+		ID:             newSectionID,
+		CurrentVersion: 1,
+		Versions: []htmlutil.VersionData{
+			{Version: 1, Content: fmt.Sprintf("<h2>%s</h2>%s", htmlutil.HTMLEscape(newTitle), body.ExtractedHTML)},
+		},
+	}
+
+	sections, err = htmlutil.InsertSectionAfter(sections, sectionID, newSection)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to insert section")
+		return
+	}
+
+	doc := htmlutil.RenderExplanation(explanation.ID, explanation.Title, sections)
+	if err := os.WriteFile(explanation.FilePath, []byte(doc), 0644); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to write updated explanation")
+		return
+	}
+	h.db.TouchExplanation(id)
+
+	var updatedSection *SectionResponse
+	for _, s := range sections {
+		if s.ID == sectionID {
+			versions := make([]SectionVersionResponse, len(s.Versions))
+			for i, v := range s.Versions {
+				versions[i] = SectionVersionResponse{Version: v.Version, Content: v.Content}
+			}
+			sr := SectionResponse{ID: s.ID, CurrentVersion: newVersion, Versions: versions}
+			updatedSection = &sr
+			break
+		}
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"section":     updatedSection,
+		"new_section": sectionsToResponse([]htmlutil.SectionData{newSection})[0],
+	})
+}
+
+func (h *Handler) ExtractChildSection(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sectionID := r.PathValue("sectionId")
+
+	var body struct {
+		ExtractedHTML string `json:"extracted_html"`
+		RemainingHTML string `json:"remaining_html"`
+		OriginalTitle string `json:"original_title"`
+		NewTitle      string `json:"new_title"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.ExtractedHTML) == "" {
+		writeError(w, http.StatusBadRequest, "extracted_html is required")
+		return
+	}
+
+	explanation, err := h.db.GetExplanation(id)
+	if err != nil || explanation == nil {
+		writeError(w, http.StatusNotFound, "explanation not found")
+		return
+	}
+
+	data, err := os.ReadFile(explanation.FilePath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to read explanation file")
+		return
+	}
+
+	sections, err := htmlutil.ParseSections(string(data))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to parse explanation")
+		return
+	}
+
+	// Update current section: new version with original title + remaining body
+	updatedContent := fmt.Sprintf("<h2>%s</h2>%s", htmlutil.HTMLEscape(body.OriginalTitle), body.RemainingHTML)
+	sections, newVersion, err := htmlutil.AddSectionVersion(sections, sectionID, updatedContent)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "section not found")
+		return
+	}
+
+	// Generate unique ID for the new child section
+	newTitle := strings.TrimSpace(body.NewTitle)
+	if newTitle == "" {
+		newTitle = "Child Section"
+	}
+	existingIDs := make(map[string]bool, len(sections))
+	for _, s := range sections {
+		existingIDs[s.ID] = true
+	}
+	newSectionID := deduplicateIDs([]htmlutil.SectionData{{ID: "section-" + slugify(newTitle)}}, existingIDs)[0].ID
+
+	newSection := htmlutil.SectionData{
+		ID:             newSectionID,
+		ParentID:       sectionID, // child of the current section
+		CurrentVersion: 1,
+		Versions: []htmlutil.VersionData{
+			{Version: 1, Content: fmt.Sprintf("<h2>%s</h2>%s", htmlutil.HTMLEscape(newTitle), body.ExtractedHTML)},
+		},
+	}
+
+	// Insert after current section (and any existing children)
+	insertAfterID := sectionID
+	for _, s := range sections {
+		if s.ParentID == sectionID {
+			insertAfterID = s.ID
+		}
+	}
+	sections, err = htmlutil.InsertSectionAfter(sections, insertAfterID, newSection)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to insert section")
+		return
+	}
+
+	doc := htmlutil.RenderExplanation(explanation.ID, explanation.Title, sections)
+	if err := os.WriteFile(explanation.FilePath, []byte(doc), 0644); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to write updated explanation")
+		return
+	}
+	h.db.TouchExplanation(id)
+
+	var updatedSection *SectionResponse
+	for _, s := range sections {
+		if s.ID == sectionID {
+			versions := make([]SectionVersionResponse, len(s.Versions))
+			for i, v := range s.Versions {
+				versions[i] = SectionVersionResponse{Version: v.Version, Content: v.Content}
+			}
+			sr := SectionResponse{ID: s.ID, CurrentVersion: newVersion, Versions: versions}
+			updatedSection = &sr
+			break
+		}
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"section":     updatedSection,
+		"new_section": sectionsToResponse([]htmlutil.SectionData{newSection})[0],
+	})
+}
+
+func slugify(s string) string {
+	s = strings.ToLower(s)
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('-')
+		}
+	}
+	result := strings.Trim(b.String(), "-")
+	// Collapse consecutive hyphens
+	for strings.Contains(result, "--") {
+		result = strings.ReplaceAll(result, "--", "-")
+	}
+	if len(result) > 40 {
+		if cut := strings.LastIndex(result[:40], "-"); cut > 0 {
+			result = result[:cut]
+		} else {
+			result = result[:40]
+		}
+	}
+	if result == "" {
+		return "extracted"
 	}
 	return result
 }

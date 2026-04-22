@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Explanation, Section } from '../types'
 import SectionComponent from '../components/Section'
+import TableOfContents from '../components/TableOfContents'
 
 export default function ExplanationPage() {
   const { id } = useParams<{ id: string }>()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [explanation, setExplanation] = useState<Explanation | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -20,6 +22,14 @@ export default function ExplanationPage() {
   const [tagDraft, setTagDraft] = useState('')
   const tagInputRef = useRef<HTMLInputElement>(null)
 
+  // ?section=<id> drives tree navigation
+  const focusedSectionId = searchParams.get('section')
+
+  // Animation direction for section pane transitions
+  const [slideClass, setSlideClass] = useState('')
+  const paneRef = useRef<HTMLDivElement>(null)
+  const prevFocusedRef = useRef<string | null>(null)
+
   useEffect(() => {
     if (!id) return
     api.getExplanation(id)
@@ -28,6 +38,37 @@ export default function ExplanationPage() {
       .finally(() => setLoading(false))
     api.listTags().then(setAllTags).catch(() => {})
   }, [id])
+
+  // Trigger slide animation on navigation
+  useEffect(() => {
+    const prev = prevFocusedRef.current
+    prevFocusedRef.current = focusedSectionId
+
+    if (prev === focusedSectionId) return // initial render, no animation
+
+    const cls = focusedSectionId !== null ? 'pane-slide-forward' : 'pane-slide-back'
+    setSlideClass(cls)
+    const timer = setTimeout(() => setSlideClass(''), 300)
+    return () => clearTimeout(timer)
+  }, [focusedSectionId])
+
+  function drillInto(sectionId: string) {
+    setSearchParams({ section: sectionId })
+    window.scrollTo({ top: 0, behavior: 'instant' })
+  }
+
+  function navigateBack() {
+    if (!explanation?.sections) return
+    // If at root, do nothing. Otherwise go to parent's parent (or root).
+    if (!focusedSectionId) return
+    const parent = explanation.sections.find(s => s.id === focusedSectionId)
+    if (parent?.parent_id) {
+      setSearchParams({ section: parent.parent_id })
+    } else {
+      setSearchParams({})
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' })
+  }
 
   function handleSectionUpdate(updatedSection: Section) {
     setExplanation(prev => {
@@ -53,13 +94,26 @@ export default function ExplanationPage() {
     })
   }
 
+  function handleBranchCreated(newSections: Section[]) {
+    setExplanation(prev => {
+      if (!prev?.sections) return prev
+      return { ...prev, sections: [...prev.sections, ...newSections] }
+    })
+  }
+
   function handleMoveUp(sectionId: string) {
     if (!explanation?.sections) return
-    const active = explanation.sections.filter(s => !s.deleted)
-    const idx = active.findIndex(s => s.id === sectionId)
-    if (idx <= 0) return
-    const reordered = [...active]
-    ;[reordered[idx - 1], reordered[idx]] = [reordered[idx], reordered[idx - 1]]
+    const allActive = explanation.sections.filter(s => !s.deleted)
+    const levelSections = allActive.filter(s => (s.parent_id ?? null) === focusedSectionId)
+    const idxInLevel = levelSections.findIndex(s => s.id === sectionId)
+    if (idxInLevel <= 0) return
+
+    const swapWithId = levelSections[idxInLevel - 1].id
+    const idxA = allActive.findIndex(s => s.id === sectionId)
+    const idxB = allActive.findIndex(s => s.id === swapWithId)
+    const reordered = [...allActive]
+    ;[reordered[idxA], reordered[idxB]] = [reordered[idxB], reordered[idxA]]
+
     const deleted = explanation.sections.filter(s => s.deleted)
     setExplanation({ ...explanation, sections: [...reordered, ...deleted] })
     api.reorderSections(explanation.id, reordered.map(s => s.id)).catch(console.error)
@@ -67,11 +121,17 @@ export default function ExplanationPage() {
 
   function handleMoveDown(sectionId: string) {
     if (!explanation?.sections) return
-    const active = explanation.sections.filter(s => !s.deleted)
-    const idx = active.findIndex(s => s.id === sectionId)
-    if (idx === -1 || idx >= active.length - 1) return
-    const reordered = [...active]
-    ;[reordered[idx], reordered[idx + 1]] = [reordered[idx + 1], reordered[idx]]
+    const allActive = explanation.sections.filter(s => !s.deleted)
+    const levelSections = allActive.filter(s => (s.parent_id ?? null) === focusedSectionId)
+    const idxInLevel = levelSections.findIndex(s => s.id === sectionId)
+    if (idxInLevel === -1 || idxInLevel >= levelSections.length - 1) return
+
+    const swapWithId = levelSections[idxInLevel + 1].id
+    const idxA = allActive.findIndex(s => s.id === sectionId)
+    const idxB = allActive.findIndex(s => s.id === swapWithId)
+    const reordered = [...allActive]
+    ;[reordered[idxA], reordered[idxB]] = [reordered[idxB], reordered[idxA]]
+
     const deleted = explanation.sections.filter(s => s.deleted)
     setExplanation({ ...explanation, sections: [...reordered, ...deleted] })
     api.reorderSections(explanation.id, reordered.map(s => s.id)).catch(console.error)
@@ -174,8 +234,32 @@ export default function ExplanationPage() {
   )
 
   const allSections = explanation.sections ?? []
-  const activeSections = allSections.filter(s => !s.deleted)
-  const deletedSections = allSections.filter(s => s.deleted)
+  const childIdSet = new Set(allSections.filter(s => s.parent_id).map(s => s.parent_id!))
+
+  // Sections visible at the current level
+  const visibleActive = allSections.filter(s => !s.deleted && (s.parent_id ?? null) === focusedSectionId)
+
+  const tocEntries = visibleActive.map(s => ({ id: s.id, title: getTitle(s) }))
+  const visibleDeleted = allSections.filter(s => s.deleted && (s.parent_id ?? null) === focusedSectionId)
+
+  // Build breadcrumb trail from root to current focused section
+  function buildBreadcrumb(): Section[] {
+    if (!focusedSectionId) return []
+    const crumbs: Section[] = []
+    let cur: Section | undefined = allSections.find(s => s.id === focusedSectionId)
+    while (cur) {
+      crumbs.unshift(cur)
+      cur = cur.parent_id ? allSections.find(s => s.id === cur!.parent_id) : undefined
+    }
+    return crumbs
+  }
+  const breadcrumb = buildBreadcrumb()
+
+  // Title of the current focused level
+  function getTitle(s: Section): string {
+    const content = s.versions.find(v => v.version === s.current_version)?.content ?? s.versions[0]?.content ?? ''
+    return new DOMParser().parseFromString(content, 'text/html').querySelector('h2')?.textContent?.trim() ?? s.id
+  }
 
   return (
     <>
@@ -195,7 +279,11 @@ export default function ExplanationPage() {
               }}
             />
           ) : (
-            <h1 className="title-editable" onClick={startEditingTitle} title="Click to edit title">
+            <h1
+              className="title-editable"
+              onClick={focusedSectionId ? () => setSearchParams({}) : startEditingTitle}
+              title={focusedSectionId ? 'Back to top level' : 'Click to edit title'}
+            >
               {explanation.title}
             </h1>
           )}
@@ -203,6 +291,7 @@ export default function ExplanationPage() {
       </header>
 
       <main className="container">
+        <TableOfContents entries={tocEntries} />
         <div className="explanation-tags">
           {(explanation.tags ?? []).map(tag => (
             <span key={tag} className="tag-pill">
@@ -232,66 +321,101 @@ export default function ExplanationPage() {
           )}
         </div>
 
-        {activeSections.length === 0 && (
-          <div className="regen-form">
-            <p className="regen-hint">All sections have been deleted. Generate new content for this explanation.</p>
-            {regenError && <div className="error">{regenError}</div>}
-            <form onSubmit={handleRegenerate} className="regen-input-row">
-              <textarea
-                rows={2}
-                placeholder="Optionally describe what you'd like covered, or leave blank to regenerate from the topic…"
-                value={regenPrompt}
-                onChange={e => setRegenPrompt(e.target.value)}
-                disabled={regenerating}
-                className="regen-textarea"
-              />
-              <button type="submit" className="btn btn-primary" disabled={regenerating}>
-                {regenerating ? 'Generating…' : 'Generate'}
-              </button>
-            </form>
+        {/* Breadcrumb + back button */}
+        {focusedSectionId && (
+          <div className="breadcrumb-bar" ref={paneRef}>
+            <button className="back-btn" onClick={navigateBack} title="Go up one level">‹</button>
+            <nav className="breadcrumb">
+              <span
+                className="breadcrumb-item breadcrumb-root"
+                onClick={() => setSearchParams({})}
+              >
+                {explanation.title}
+              </span>
+              {breadcrumb.map((crumb, i) => (
+                <span key={crumb.id} className="breadcrumb-item">
+                  <span className="breadcrumb-sep">›</span>
+                  {i < breadcrumb.length - 1 ? (
+                    <span
+                      className="breadcrumb-link"
+                      onClick={() => setSearchParams({ section: crumb.id })}
+                    >
+                      {getTitle(crumb)}
+                    </span>
+                  ) : (
+                    <span className="breadcrumb-current">{getTitle(crumb)}</span>
+                  )}
+                </span>
+              ))}
+            </nav>
           </div>
         )}
 
-        {activeSections.map((section, idx) => (
-          <SectionComponent
-            key={section.id}
-            section={section}
-            explanationId={explanation.id}
-            topic={explanation.topic}
-            isFirst={idx === 0}
-            isLast={idx === activeSections.length - 1}
-            onUpdate={handleSectionUpdate}
-            onInsertAfter={(afterId, newSections) => handleInsertAfter(afterId, newSections)}
-            onMoveUp={() => handleMoveUp(section.id)}
-            onMoveDown={() => handleMoveDown(section.id)}
-            onDelete={() => handleDelete(section.id)}
-          />
-        ))}
+        <div className={`sections-pane ${slideClass}`}>
+          {visibleActive.length === 0 && !focusedSectionId && (
+            <div className="regen-form">
+              <p className="regen-hint">All sections have been deleted. Generate new content for this explanation.</p>
+              {regenError && <div className="error">{regenError}</div>}
+              <form onSubmit={handleRegenerate} className="regen-input-row">
+                <textarea
+                  rows={2}
+                  placeholder="Optionally describe what you'd like covered, or leave blank to regenerate from the topic…"
+                  value={regenPrompt}
+                  onChange={e => setRegenPrompt(e.target.value)}
+                  disabled={regenerating}
+                  className="regen-textarea"
+                />
+                <button type="submit" className="btn btn-primary" disabled={regenerating}>
+                  {regenerating ? 'Generating…' : 'Generate'}
+                </button>
+              </form>
+            </div>
+          )}
 
-        {deletedSections.length > 0 && (
-          <details className="deleted-sections">
-            <summary>Deleted sections ({deletedSections.length})</summary>
-            <ul className="deleted-list">
-              {deletedSections.map(section => {
-                const content = section.versions.find(v => v.version === section.current_version)?.content
-                  ?? section.versions[0]?.content ?? ''
-                const doc = new DOMParser().parseFromString(content, 'text/html')
-                const title = doc.querySelector('h2')?.textContent?.trim() ?? section.id
-                return (
-                  <li key={section.id} className="deleted-item">
-                    <span className="deleted-item-title">{title}</span>
-                    <button
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => handleRestore(section.id)}
-                    >
-                      Restore
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          </details>
-        )}
+          {visibleActive.map((section, idx) => (
+            <SectionComponent
+              key={section.id}
+              section={section}
+              explanationId={explanation.id}
+              topic={explanation.topic}
+              isFirst={idx === 0}
+              isLast={idx === visibleActive.length - 1}
+              hasChildren={childIdSet.has(section.id)}
+              onUpdate={handleSectionUpdate}
+              onInsertAfter={(afterId, newSections) => handleInsertAfter(afterId, newSections)}
+              onMoveUp={() => handleMoveUp(section.id)}
+              onMoveDown={() => handleMoveDown(section.id)}
+              onDelete={() => handleDelete(section.id)}
+              onDrillIn={() => drillInto(section.id)}
+              onBranchCreated={handleBranchCreated}
+            />
+          ))}
+
+          {visibleDeleted.length > 0 && (
+            <details className="deleted-sections">
+              <summary>Deleted sections ({visibleDeleted.length})</summary>
+              <ul className="deleted-list">
+                {visibleDeleted.map(section => {
+                  const content = section.versions.find(v => v.version === section.current_version)?.content
+                    ?? section.versions[0]?.content ?? ''
+                  const doc = new DOMParser().parseFromString(content, 'text/html')
+                  const title = doc.querySelector('h2')?.textContent?.trim() ?? section.id
+                  return (
+                    <li key={section.id} className="deleted-item">
+                      <span className="deleted-item-title">{title}</span>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => handleRestore(section.id)}
+                      >
+                        Restore
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </details>
+          )}
+        </div>
       </main>
     </>
   )

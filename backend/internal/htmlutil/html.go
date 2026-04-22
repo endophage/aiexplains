@@ -15,6 +15,7 @@ type VersionData struct {
 
 type SectionData struct {
 	ID             string
+	ParentID       string // empty = root-level section
 	CurrentVersion int
 	Deleted        bool
 	Versions       []VersionData // sorted: newest first (highest version number first)
@@ -46,8 +47,9 @@ func ParseSections(htmlContent string) ([]SectionData, error) {
 
 func extractSection(n *html.Node) SectionData {
 	s := SectionData{
-		ID:      getAttr(n, "id"),
-		Deleted: getAttr(n, "data-deleted") == "true",
+		ID:       getAttr(n, "id"),
+		ParentID: getAttr(n, "data-parent-id"),
+		Deleted:  getAttr(n, "data-deleted") == "true",
 	}
 	fmt.Sscanf(getAttr(n, "data-current-version"), "%d", &s.CurrentVersion)
 	if s.CurrentVersion == 0 {
@@ -79,18 +81,21 @@ func RenderExplanation(id, title string, sections []SectionData) string {
 	var buf strings.Builder
 	buf.WriteString("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n")
 	buf.WriteString("<meta charset=\"UTF-8\">\n")
-	buf.WriteString(fmt.Sprintf("<title>%s</title>\n", htmlEscape(title)))
+	buf.WriteString(fmt.Sprintf("<title>%s</title>\n", HTMLEscape(title)))
 	buf.WriteString("</head>\n<body>\n")
 	buf.WriteString(fmt.Sprintf("<div class=\"explanation\" data-id=\"%s\">\n", id))
 
 	for _, section := range sections {
-		deletedAttr := ""
+		extra := ""
+		if section.ParentID != "" {
+			extra += fmt.Sprintf(` data-parent-id="%s"`, section.ParentID)
+		}
 		if section.Deleted {
-			deletedAttr = ` data-deleted="true"`
+			extra += ` data-deleted="true"`
 		}
 		buf.WriteString(fmt.Sprintf(
 			"<div class=\"section\" id=\"%s\" data-current-version=\"%d\"%s>\n",
-			section.ID, section.CurrentVersion, deletedAttr,
+			section.ID, section.CurrentVersion, extra,
 		))
 		for _, v := range section.Versions {
 			style := ""
@@ -131,30 +136,48 @@ func RestoreSection(sections []SectionData, sectionID string) ([]SectionData, er
 	return nil, fmt.Errorf("section %q not found", sectionID)
 }
 
-// ReorderSections reorders the active (non-deleted) sections to match orderedIDs.
-// Deleted sections are appended after the active sections in their original relative order.
+// ReorderSections reorders active sections according to orderedIDs.
+// orderedIDs may be a subset (e.g. one level of the tree); unspecified active sections
+// retain their original relative positions, interleaved such that the reordered IDs
+// occupy the same positions in the flat list as the originals did.
+// Deleted sections are always appended last.
 func ReorderSections(sections []SectionData, orderedIDs []string) ([]SectionData, error) {
+	specified := make(map[string]bool, len(orderedIDs))
+	for _, id := range orderedIDs {
+		specified[id] = true
+	}
+
 	byID := make(map[string]SectionData, len(sections))
 	var deleted []SectionData
+	// positions (in active-only list) occupied by the specified IDs, in encounter order
+	var specPositions []int
+	var active []SectionData
 	for _, s := range sections {
 		if s.Deleted {
 			deleted = append(deleted, s)
-		} else {
-			byID[s.ID] = s
+			continue
 		}
+		if specified[s.ID] {
+			specPositions = append(specPositions, len(active))
+		}
+		byID[s.ID] = s
+		active = append(active, s)
 	}
 
-	if len(orderedIDs) != len(byID) {
-		return nil, fmt.Errorf("expected %d active section IDs, got %d", len(byID), len(orderedIDs))
-	}
-
-	result := make([]SectionData, 0, len(sections))
 	for _, id := range orderedIDs {
-		s, ok := byID[id]
-		if !ok {
+		if _, ok := byID[id]; !ok {
 			return nil, fmt.Errorf("unknown section ID %q", id)
 		}
-		result = append(result, s)
+	}
+	if len(specPositions) != len(orderedIDs) {
+		return nil, fmt.Errorf("section ID count mismatch")
+	}
+
+	// Place reordered sections at the original positions of the specified IDs
+	result := make([]SectionData, len(active))
+	copy(result, active)
+	for i, pos := range specPositions {
+		result[pos] = byID[orderedIDs[i]]
 	}
 	return append(result, deleted...), nil
 }
@@ -219,7 +242,7 @@ func getAttr(n *html.Node, key string) string {
 	return ""
 }
 
-func htmlEscape(s string) string {
+func HTMLEscape(s string) string {
 	var buf strings.Builder
 	for _, r := range s {
 		switch r {

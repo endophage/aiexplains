@@ -76,6 +76,24 @@ export const api = {
       body: JSON.stringify({ title }),
     }),
 
+  branchSection: (explanationId: string, sectionId: string, prompt: string) =>
+    request<{ sections: Section[] }>(`/explanations/${explanationId}/sections/${sectionId}/branch`, {
+      method: 'POST',
+      body: JSON.stringify({ prompt }),
+    }),
+
+  extractSection: (explanationId: string, sectionId: string, extractedHtml: string, remainingHtml: string, originalTitle: string, newTitle: string) =>
+    request<{ section: Section; new_section: Section }>(`/explanations/${explanationId}/sections/${sectionId}/extract`, {
+      method: 'POST',
+      body: JSON.stringify({ extracted_html: extractedHtml, remaining_html: remainingHtml, original_title: originalTitle, new_title: newTitle }),
+    }),
+
+  extractChildSection: (explanationId: string, sectionId: string, extractedHtml: string, remainingHtml: string, originalTitle: string, newTitle: string) =>
+    request<{ section: Section; new_section: Section }>(`/explanations/${explanationId}/sections/${sectionId}/extract-child`, {
+      method: 'POST',
+      body: JSON.stringify({ extracted_html: extractedHtml, remaining_html: remainingHtml, original_title: originalTitle, new_title: newTitle }),
+    }),
+
   deleteSection: (explanationId: string, sectionId: string) =>
     request<void>(`/explanations/${explanationId}/sections/${sectionId}`, { method: 'DELETE' }),
 
