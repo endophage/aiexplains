@@ -94,6 +94,12 @@ export const api = {
       body: JSON.stringify({ extracted_html: extractedHtml, remaining_html: remainingHtml, original_title: originalTitle, new_title: newTitle }),
     }),
 
+  editSection: (explanationId: string, sectionId: string, content: string) =>
+    request<{ section: Section }>(`/explanations/${explanationId}/sections/${sectionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ content }),
+    }),
+
   deleteSection: (explanationId: string, sectionId: string) =>
     request<void>(`/explanations/${explanationId}/sections/${sectionId}`, { method: 'DELETE' }),
 

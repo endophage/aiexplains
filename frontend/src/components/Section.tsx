@@ -4,7 +4,109 @@ import mermaid from 'mermaid'
 import { api } from '../api/client'
 import type { Section } from '../types'
 
+mermaid.initialize({ startOnLoad: false, theme: 'default' })
+
 type ExpandedDiagram = { type: 'svg'; html: string } | { type: 'img'; src: string; alt: string }
+
+// ── Markdown ↔ HTML helpers ──────────────────────────────────────────────────
+
+function nodeToMd(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? ''
+  if (node.nodeType !== Node.ELEMENT_NODE) return ''
+  const el = node as Element
+  const tag = el.tagName.toLowerCase()
+  const kids = () => Array.from(el.childNodes).map(nodeToMd).join('')
+  switch (tag) {
+    case 'h1': return `# ${kids()}\n\n`
+    case 'h2': return `## ${kids()}\n\n`
+    case 'h3': return `### ${kids()}\n\n`
+    case 'h4': return `#### ${kids()}\n\n`
+    case 'strong': case 'b': return `**${kids()}**`
+    case 'em': case 'i': return `*${kids()}*`
+    case 'code': return el.closest('pre') ? el.textContent ?? '' : `\`${kids()}\``
+    case 'pre': {
+      const isMermaid = el.classList.contains('mermaid') || el.querySelector('.mermaid') !== null
+      const lang = isMermaid ? 'mermaid' : ''
+      return `\`\`\`${lang}\n${el.textContent ?? ''}\n\`\`\`\n\n`
+    }
+    case 'blockquote': return Array.from(el.childNodes).map(nodeToMd).join('').trim()
+      .split('\n').map(l => `> ${l}`).join('\n') + '\n\n'
+    case 'ul': return Array.from(el.querySelectorAll(':scope > li'))
+      .map(li => `- ${nodeToMd(li).trim()}`).join('\n') + '\n\n'
+    case 'ol': return Array.from(el.querySelectorAll(':scope > li'))
+      .map((li, i) => `${i + 1}. ${nodeToMd(li).trim()}`).join('\n') + '\n\n'
+    case 'li': return kids()
+    case 'p': return kids() + '\n\n'
+    case 'br': return '\n'
+    default:
+      if (el.classList.contains('mermaid')) {
+        return `\`\`\`mermaid\n${el.textContent ?? ''}\n\`\`\`\n\n`
+      }
+      return kids()
+  }
+}
+
+function htmlToMarkdown(html: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  return Array.from(doc.body.childNodes).map(nodeToMd).join('').trim()
+}
+
+function inlineMd(text: string): string {
+  return text
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`(.+?)`/g, '<code>$1</code>')
+}
+
+function markdownToHTML(md: string): string {
+  const lines = md.split('\n')
+  const out: string[] = []
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i]
+    if (line.startsWith('#### ')) { out.push(`<h4>${inlineMd(line.slice(5))}</h4>`); i++; continue }
+    if (line.startsWith('### '))  { out.push(`<h3>${inlineMd(line.slice(4))}</h3>`); i++; continue }
+    if (line.startsWith('## '))   { out.push(`<h2>${inlineMd(line.slice(3))}</h2>`); i++; continue }
+    if (line.startsWith('# '))    { out.push(`<h1>${inlineMd(line.slice(2))}</h1>`); i++; continue }
+    if (line.startsWith('> ')) {
+      const items: string[] = []
+      while (i < lines.length && lines[i].startsWith('> ')) { items.push(lines[i].slice(2)); i++ }
+      out.push(`<blockquote><p>${inlineMd(items.join('\n'))}</p></blockquote>`)
+      continue
+    }
+    if (line.startsWith('- ')) {
+      const items: string[] = []
+      while (i < lines.length && lines[i].startsWith('- ')) { items.push(`<li>${inlineMd(lines[i].slice(2))}</li>`); i++ }
+      out.push(`<ul>${items.join('')}</ul>`)
+      continue
+    }
+    if (/^\d+\. /.test(line)) {
+      const items: string[] = []
+      while (i < lines.length && /^\d+\. /.test(lines[i])) { items.push(`<li>${inlineMd(lines[i].replace(/^\d+\. /, ''))}</li>`); i++ }
+      out.push(`<ol>${items.join('')}</ol>`)
+      continue
+    }
+    if (line.startsWith('```')) {
+      const lang = line.slice(3).trim()
+      const codeLines: string[] = []
+      i++
+      while (i < lines.length && !lines[i].startsWith('```')) { codeLines.push(lines[i]); i++ }
+      i++ // consume closing ```
+      if (lang === 'mermaid') {
+        out.push(`<pre class="mermaid">${codeLines.join('\n')}</pre>`)
+      } else {
+        const cls = lang ? ` class="language-${lang}"` : ''
+        out.push(`<pre><code${cls}>${codeLines.join('\n')}</code></pre>`)
+      }
+      continue
+    }
+    if (line.trim() === '') { i++; continue }
+    out.push(`<p>${inlineMd(line)}</p>`)
+    i++
+  }
+  return out.join('\n')
+}
 
 interface Props {
   section: Section
@@ -50,6 +152,12 @@ export default function SectionComponent({
   const [branchPrompt, setBranchPrompt] = useState('')
   const [branching, setBranching] = useState(false)
   const [branchError, setBranchError] = useState<string | null>(null)
+
+  const [isEditing, setIsEditing] = useState(false)
+  const [editTitle, setEditTitle] = useState('')
+  const [editBody, setEditBody] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const [extractPos, setExtractPos] = useState<{ top: number; left: number } | null>(null)
   const [extracting, setExtracting] = useState(false)
@@ -182,6 +290,31 @@ export default function SectionComponent({
     return () => el.removeEventListener('click', handleClick)
   }, [])
 
+  function startEditing() {
+    setEditTitle(title)
+    setEditBody(htmlToMarkdown(bodyHTML))
+    setSaveError(null)
+    setIsEditing(true)
+  }
+
+  async function handleSave(e: FormEvent) {
+    e.preventDefault()
+    if (saving) return
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const html = `<h2>${editTitle.trim()}</h2>${markdownToHTML(editBody)}`
+      const { section: updated } = await api.editSection(explanationId, section.id, html)
+      onUpdate(updated)
+      setDisplayVersion(updated.current_version)
+      setIsEditing(false)
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function handleAsk(e: FormEvent) {
     e.preventDefault()
     if (!askPrompt.trim() || asking) return
@@ -237,7 +370,7 @@ export default function SectionComponent({
     }
   }
 
-  const busy = asking || extending || branching
+  const busy = asking || extending || branching || saving
 
   return (
     <>
@@ -303,6 +436,14 @@ export default function SectionComponent({
           +
         </button>
         <button
+          className={`section-btn${isEditing ? ' active' : ''}`}
+          title={isEditing ? 'Cancel edit' : 'Edit section content'}
+          onClick={() => isEditing ? setIsEditing(false) : startEditing()}
+          disabled={busy && !isEditing}
+        >
+          ✎
+        </button>
+        <button
           className="section-btn section-btn--delete"
           title="Delete this section"
           onClick={onDelete}
@@ -323,7 +464,16 @@ export default function SectionComponent({
       {/* Main content column */}
       <div className="section-main">
         <div className="section-header">
-          <h2 className="section-title">{title}</h2>
+          {isEditing
+            ? <input
+                className="edit-title-input"
+                value={editTitle}
+                onChange={e => setEditTitle(e.target.value)}
+                placeholder="Section title"
+                disabled={saving}
+              />
+            : <h2 className="section-title">{title}</h2>
+          }
           {sortedVersionNums.length > 1 && (
             <div className="version-nav">
               <button onClick={() => setDisplayVersion(sortedVersionNums[currentIdx - 1])} disabled={currentIdx === 0}>←</button>
@@ -356,7 +506,27 @@ export default function SectionComponent({
           </form>
         )}
 
-        <div ref={bodyRef} className="section-body" dangerouslySetInnerHTML={{ __html: bodyHTML }} />
+        {isEditing ? (
+          <form className="edit-form" onSubmit={handleSave}>
+            {saveError && <div className="error">{saveError}</div>}
+            <textarea
+              className="edit-body-textarea"
+              value={editBody}
+              onChange={e => setEditBody(e.target.value)}
+              disabled={saving}
+              autoFocus
+              spellCheck
+            />
+            <div className="form-actions">
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setIsEditing(false)}>Cancel</button>
+              <button type="submit" className="btn btn-primary btn-sm" disabled={saving}>
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div ref={bodyRef} className="section-body" dangerouslySetInnerHTML={{ __html: bodyHTML }} />
+        )}
 
         {showExtend && (
           <form className="inline-form inline-form--extend" onSubmit={handleExtend}>

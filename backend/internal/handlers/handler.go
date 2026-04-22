@@ -34,6 +34,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/explanations/{id}/sections/{sectionId}/extract", h.ExtractSection)
 	mux.HandleFunc("POST /api/explanations/{id}/sections/{sectionId}/extract-child", h.ExtractChildSection)
 	mux.HandleFunc("POST /api/explanations/{id}/sections/{sectionId}/branch", h.BranchSection)
+	mux.HandleFunc("PATCH /api/explanations/{id}/sections/{sectionId}", h.EditSection)
 	mux.HandleFunc("DELETE /api/explanations/{id}/sections/{sectionId}", h.DeleteSection)
 	mux.HandleFunc("POST /api/explanations/{id}/sections/{sectionId}/restore", h.RestoreSection)
 	mux.HandleFunc("POST /api/explanations/{id}/reorder", h.ReorderSections)

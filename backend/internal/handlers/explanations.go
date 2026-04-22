@@ -797,6 +797,65 @@ func deduplicateIDs(sections []htmlutil.SectionData, taken map[string]bool) []ht
 	return result
 }
 
+func (h *Handler) EditSection(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sectionID := r.PathValue("sectionId")
+
+	var body struct {
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Content) == "" {
+		writeError(w, http.StatusBadRequest, "content is required")
+		return
+	}
+
+	explanation, err := h.db.GetExplanation(id)
+	if err != nil || explanation == nil {
+		writeError(w, http.StatusNotFound, "explanation not found")
+		return
+	}
+
+	data, err := os.ReadFile(explanation.FilePath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to read explanation file")
+		return
+	}
+
+	sections, err := htmlutil.ParseSections(string(data))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to parse explanation")
+		return
+	}
+
+	sections, newVersion, err := htmlutil.AddSectionVersion(sections, sectionID, strings.TrimSpace(body.Content))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "section not found")
+		return
+	}
+
+	doc := htmlutil.RenderExplanation(explanation.ID, explanation.Title, sections)
+	if err := os.WriteFile(explanation.FilePath, []byte(doc), 0644); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to write updated explanation")
+		return
+	}
+	h.db.TouchExplanation(id)
+
+	var updatedSection *SectionResponse
+	for _, s := range sections {
+		if s.ID == sectionID {
+			versions := make([]SectionVersionResponse, len(s.Versions))
+			for i, v := range s.Versions {
+				versions[i] = SectionVersionResponse{Version: v.Version, Content: v.Content}
+			}
+			sr := SectionResponse{ID: s.ID, CurrentVersion: newVersion, Versions: versions}
+			updatedSection = &sr
+			break
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"section": updatedSection})
+}
+
 func (h *Handler) ExtractSection(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	sectionID := r.PathValue("sectionId")
